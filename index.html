@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Laporan Shift & Monitoring Operator</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 pb-24">
+
+  <!-- Header & Navigasi -->
+  <div class="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-50">
+    <div class="flex justify-between items-center mb-3">
+      <div>
+        <h1 class="text-lg font-bold leading-tight">System Laporan Shift</h1>
+        <p class="text-xs text-blue-200" id="networkStatus">🟢 Connecting...</p>
+      </div>
+      <div class="text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500" id="pendingSyncBadge">
+        0 Pending Offline
+      </div>
+    </div>
+    
+    <!-- Navigation Tabs -->
+    <div class="flex space-x-2 overflow-x-auto text-sm">
+      <button onclick="switchTab('tab-input')" id="btn-tab-input" class="px-4 py-2 bg-white text-blue-700 font-bold rounded-lg whitespace-nowrap shadow">
+        📝 Form Input Shift
+      </button>
+      <button onclick="switchTab('tab-dashboard')" id="btn-tab-dashboard" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap">
+        📊 Dashboard & Approval
+      </button>
+      <button onclick="switchTab('tab-master')" id="btn-tab-master" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap">
+        ⚙️ Master Unit (162)
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- TAB 1: FORM INPUT SHIFT (MOBILE OPTIMIZED) -->
+  <!-- ============================================== -->
+  <div id="tab-input" class="p-4 max-w-2xl mx-auto space-y-4 block">
+    <form id="shiftForm" class="space-y-4">
+      
+      <!-- 1. HEADER INPUT -->
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+        <h2 class="font-bold text-slate-700 border-b pb-2 text-sm flex items-center gap-2">
+          <span>1. Informasi Area & Shift</span>
+        </h2>
+        
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Tanggal</label>
+            <input type="date" id="tanggal" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Shift</label>
+            <select id="shift" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold">
+              <option value="1">Shift 1 (06:00 - 14:00)</option>
+              <option value="2">Shift 2 (14:00 - 22:00)</option>
+              <option value="3">Shift 3 (22:00 - 06:00)</option>
+            </select>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs font-bold text-slate-500 mb-1">Nama Koordinator Shift</label>
+            <input type="text" id="koordinator" required placeholder="Masukkan nama koordinator..." class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Department</label>
+            <select id="department" onchange="updateMesinOptions(); checkAssemblyMode();" class="w-full p-2.5 border rounded-lg bg-blue-50 border-blue-300 font-bold text-blue-700 text-sm">
+              <option value="Blowing">Blowing </option>
+              <option value="Vinyl">Vinyl </option>
+              <option value="Sablon">Sablon </option>
+              <option value="Painting">Painting </option>
+              <option value="Assembly">Assembly </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Nomor Mesin / Line</label>
+            <select id="mesin" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. OPERATOR SELECTION -->
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+        <div class="flex justify-between items-center border-b pb-2">
+          <h2 class="font-bold text-slate-700 text-sm">2. Data Operator / Tim Kerja</h2>
+          <div id="assemblyModeWrapper" class="hidden">
+            <select id="assembly_mode" onchange="toggleOperatorMode()" class="text-xs bg-yellow-100 border border-yellow-400 p-1.5 rounded font-bold text-yellow-800">
+              <option value="Individu">Mode: Individu</option>
+              <option value="Tim">Mode: Tim / Kelompok</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="operatorContainer" class="space-y-2">
+          <div class="flex gap-2">
+            <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Operator Utama" required>
+            <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
+              <option value="Hadir">Hadir</option>
+              <option value="Rolling/Bantuan">Rolling</option>
+              <option value="Izin/Sakit">Izin/Sakit</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="button" id="btnAddOperator" onclick="addOperatorInput()" class="hidden w-full py-2 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100">
+          + Tambah Operator Ke-2 s/d 10 (Kelompok)
+        </button>
+      </div>
+
+      <!-- 3. HASIL PRODUKSI MULTI-GARAPAN (MAX 3) -->
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+        <div class="flex justify-between items-center border-b pb-2">
+          <h2 class="font-bold text-slate-700 text-sm">3. Multi-Garapan Produk (Maks. 3)</h2>
+          <span id="timeSummaryBadge" class="text-xs font-bold px-2 py-1 rounded bg-slate-100 text-slate-700">
+            Total: 0 Jam / 7 Jam
+          </span>
+        </div>
+
+        <p class="text-xs text-slate-500">Durasi kerja efektif: 7 jam per shift (dikurangi 1 jam istirahat).</p>
+
+        <div id="garapanContainer" class="space-y-4">
+          <!-- Item Garapan injected here -->
+        </div>
+
+        <button type="button" id="btnAddGarapan" onclick="addGarapanItem()" class="w-full py-3 border-2 border-dashed border-slate-300 text-slate-600 rounded-xl text-sm font-bold bg-slate-50 hover:bg-slate-100">
+          + Tambah Garapan Baru
+        </button>
+      </div>
+
+      <!-- STATUS & ACTION BUTTONS -->
+      <div id="validationWarning" class="hidden p-3 bg-red-100 border border-red-300 text-red-700 rounded-xl text-xs font-bold"></div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <button type="button" onclick="submitForm('Draft')" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3.5 rounded-xl shadow text-sm">
+          💾 Simpan Draft
+        </button>
+        <button type="button" onclick="submitForm('Submitted')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow text-sm">
+          🚀 Kirim Laporan
+        </button>
+      </div>
+      
+      <p id="statusMessage" class="text-center font-bold text-sm hidden"></p>
+    </form>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- TAB 2: DASHBOARD & APPROVAL WORKFLOW -->
+  <!-- ============================================== -->
+  <div id="tab-dashboard" class="p-4 max-w-4xl mx-auto hidden space-y-4">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h2 class="font-bold text-slate-800 text-base">Monitoring & Approval Shift</h2>
+          <p class="text-xs text-slate-500">Laporan yang memerlukan persetujuan Supervisor/Manager</p>
+        </div>
+        <button onclick="loadDashboardData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">
+          🔄 Refresh Data
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse min-w-[650px]">
+          <thead>
+            <tr class="bg-slate-100 text-slate-600 text-xs font-bold uppercase">
+              <th class="p-2.5 border-b">Tanggal / Shift</th>
+              <th class="p-2.5 border-b">Dept / Unit</th>
+              <th class="p-2.5 border-b">Koordinator</th>
+              <th class="p-2.5 border-b">Hasil OK / Target</th>
+              <th class="p-2.5 border-b">Efisiensi</th>
+              <th class="p-2.5 border-b">Status</th>
+              <th class="p-2.5 border-b">Aksi Approval</th>
+            </tr>
+          </thead>
+          <tbody id="tableBodyDashboard" class="text-xs">
+            <tr><td colspan="7" class="p-4 text-center text-slate-400">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- TAB 3: MASTER DATA UNIT (162 TITIK KERJA) -->
+  <!-- ============================================== -->
+  <div id="tab-master" class="p-4 max-w-4xl mx-auto hidden space-y-4">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <h2 class="font-bold text-slate-800 text-base mb-1">Master Titik Kerja Pabrik (162 Unit)</h2>
+      <p class="text-xs text-slate-500 mb-4">Struktur terdaftar unit mesin & line produksi aktif.</p>
+      
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center mb-6">
+        <div class="bg-blue-50 p-3 rounded-lg border border-blue-100">
+          <p class="text-2xl font-black text-blue-700">30</p>
+          <p class="text-[11px] text-slate-600 font-semibold">Blowing</p>
+        </div>
+        <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+          <p class="text-2xl font-black text-indigo-700">10</p>
+          <p class="text-[11px] text-slate-600 font-semibold">Vinyl</p>
+        </div>
+        <div class="bg-purple-50 p-3 rounded-lg border border-purple-100">
+          <p class="text-2xl font-black text-purple-700">25</p>
+          <p class="text-[11px] text-slate-600 font-semibold">Sablon</p>
+        </div>
+        <div class="bg-pink-50 p-3 rounded-lg border border-pink-100">
+          <p class="text-2xl font-black text-pink-700">16</p>
+          <p class="text-[11px] text-slate-600 font-semibold">Painting</p>
+        </div>
+        <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+          <p class="text-2xl font-black text-emerald-700">20</p>
+          <p class="text-[11px] text-slate-600 font-semibold">Assembly</p>
+        </div>
+      </div>
+
+      <div class="space-y-3" id="masterUnitDetails"></div>
+    </div>
+  </div>
+
+
+  <script>
+    // ==========================================
+    // 1. SUPABASE CREDENTIALS DIRECTLY INTEGRATED
+    // ==========================================
+    const SUPABASE_URL = "https://ffpgcfwwvrwbsbjdmhfg.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_RMlIEDPwSZq0b_F2PGn3DQ_lNdzwv6C";
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ==========================================
+    // 2. MASTER MESIN GENERATOR (162 TITIK)
+    // ==========================================
+    const MASTER_UNITS = {
+      'Blowing': Array.from({length: 30}, (_, i) => `Blowing ${String(i+1).padStart(2, '0')}`),
+      'Vinyl': Array.from({length: 10}, (_, i) => `Vinyl ${String(i+1).padStart(2, '0')}`),
+      'Sablon': Array.from({length: 25}, (_, i) => `Sablon ${String(i+1).padStart(2, '0')}`),
+      'Painting': Array.from({length: 16}, (_, i) => `Painting ${String(i+1).padStart(2, '0')}`),
+      'Assembly': Array.from({length: 20}, (_, i) => `Line Assembly ${String(i+1).padStart(2, '0')}`)
+    };
+
+    function updateMesinOptions() {
+      const dept = document.getElementById('department').value;
+      const selectMesin = document.getElementById('mesin');
+      selectMesin.innerHTML = '';
+      MASTER_UNITS[dept].forEach(m => {
+        selectMesin.innerHTML += `<option value="${m}">${m}</option>`;
+      });
+    }
+
+    // ==========================================
+    // 3. UI TABS & OPERATOR MODE
+    // ==========================================
+    function switchTab(tabId) {
+      document.getElementById('tab-input').classList.add('hidden');
+      document.getElementById('tab-dashboard').classList.add('hidden');
+      document.getElementById('tab-master').classList.add('hidden');
+      document.getElementById(tabId).classList.remove('hidden');
+
+      ['input', 'dashboard', 'master'].forEach(t => {
+        const btn = document.getElementById('btn-tab-' + t);
+        if ('tab-' + t === tabId) {
+          btn.className = "px-4 py-2 bg-white text-blue-700 font-bold rounded-lg whitespace-nowrap shadow";
+        } else {
+          btn.className = "px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap";
+        }
+      });
+
+      if (tabId === 'tab-dashboard') loadDashboardData();
+      if (tabId === 'tab-master') renderMasterView();
+    }
+
+    function checkAssemblyMode() {
+      const dept = document.getElementById('department').value;
+      const modeWrapper = document.getElementById('assemblyModeWrapper');
+      if (dept === 'Assembly') {
+        modeWrapper.classList.remove('hidden');
+      } else {
+        modeWrapper.classList.add('hidden');
+        document.getElementById('assembly_mode').value = 'Individu';
+      }
+      toggleOperatorMode();
+    }
+
+    function toggleOperatorMode() {
+      const mode = document.getElementById('assembly_mode').value;
+      const btnAddOp = document.getElementById('btnAddOperator');
+      if (mode === 'Tim') {
+        btnAddOp.classList.remove('hidden');
+      } else {
+        btnAddOp.classList.add('hidden');
+        document.getElementById('operatorContainer').innerHTML = `
+          <div class="flex gap-2">
+            <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Operator Utama" required>
+            <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
+              <option value="Hadir">Hadir</option>
+              <option value="Rolling/Bantuan">Rolling</option>
+              <option value="Izin/Sakit">Izin/Sakit</option>
+            </select>
+          </div>
+        `;
+      }
+    }
+
+    function addOperatorInput() {
+      const currentOps = document.querySelectorAll('.op-nama').length;
+      if (currentOps >= 10) {
+        alert("Maksimal 10 operator dalam 1 kelompok Assembly!");
+        return;
+      }
+      const div = document.createElement('div');
+      div.className = "flex gap-2 mt-2";
+      div.innerHTML = `
+        <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Anggota Tim ${currentOps + 1}" required>
+        <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
+          <option value="Hadir">Hadir</option>
+          <option value="Rolling/Bantuan">Rolling</option>
+          <option value="Izin/Sakit">Izin/Sakit</option>
+        </select>
+        <button type="button" onclick="this.parentElement.remove()" class="px-3 bg-red-100 text-red-600 rounded-lg font-bold">✕</button>
+      `;
+      document.getElementById('operatorContainer').appendChild(div);
+    }
+
+    // ==========================================
+    // 4. MULTI-GARAPAN LOGIC (MAX 3) & KALKULASI
+    // ==========================================
+    let garapanCounter = 0;
+
+    function addGarapanItem() {
+      if (garapanCounter >= 3) {
+        alert("Sesuai aturan shift, maksimal 3 garapan produk berbeda per shift!");
+        return;
+      }
+      garapanCounter++;
+      const container = document.getElementById('garapanContainer');
+      const div = document.createElement('div');
+      div.className = "garapan-card p-3 border rounded-xl bg-slate-50 relative space-y-3";
+      div.setAttribute('data-id', garapanCounter);
+      div.innerHTML = `
+        <div class="flex justify-between items-center border-b pb-2">
+          <span class="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-md">Garapan #${garapanCounter}</span>
+          ${garapanCounter > 1 ? `<button type="button" onclick="removeGarapan(this)" class="text-xs text-red-600 font-bold hover:underline">Hapus Garapan</button>` : ''}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Nama Produk / Artikel</label>
+            <input type="text" class="g-produk w-full p-2 border rounded-lg text-sm bg-white" placeholder="Contoh: Mainan Truk Plastik A-01" required>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Mulai</label>
+            <input type="time" class="g-mulai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Selesai</label>
+            <input type="time" class="g-selesai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Target Output</label>
+            <input type="number" class="g-target w-full p-2 border rounded-lg text-sm bg-white font-semibold" placeholder="0" required oninput="calculateShiftTotals()">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil OK (Bagus)</label>
+            <input type="number" class="g-ok w-full p-2 border rounded-lg text-sm bg-green-50 text-green-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil NG (Reject)</label>
+            <input type="number" class="g-ng w-full p-2 border rounded-lg text-sm bg-red-50 text-red-700 font-bold" placeholder="0" required>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Downtime (Menit)</label>
+            <input type="number" class="g-downtime w-full p-2 border rounded-lg text-sm bg-amber-50 text-amber-700 font-bold" placeholder="0">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Alasan Downtime (Kendala)</label>
+            <input type="text" class="g-alasan w-full p-2 border rounded-lg text-sm bg-white" placeholder="Contoh: Setting Moulding, Bahan Baku Habis, Mati Listrik...">
+          </div>
+        </div>
+      `;
+      container.appendChild(div);
+
+      if (garapanCounter >= 3) {
+        document.getElementById('btnAddGarapan').classList.add('hidden');
+      }
+    }
+
+    function removeGarapan(btn) {
+      btn.closest('.garapan-card').remove();
+      garapanCounter--;
+      document.getElementById('btnAddGarapan').classList.remove('hidden');
+      calculateShiftTotals();
+    }
+
+    function calculateShiftTotals() {
+      let totalMinutes = 0;
+      let totalTarget = 0;
+      let totalOK = 0;
+
+      document.querySelectorAll('.garapan-card').forEach(card => {
+        const mulai = card.querySelector('.g-mulai').value;
+        const selesai = card.querySelector('.g-selesai').value;
+        const target = parseInt(card.querySelector('.g-target').value) || 0;
+        const ok = parseInt(card.querySelector('.g-ok').value) || 0;
+
+        totalTarget += target;
+        totalOK += ok;
+
+        if (mulai && selesai) {
+          const [mH, mM] = mulai.split(':').map(Number);
+          const [sH, sM] = selesai.split(':').map(Number);
+          let diff = (sH * 60 + sM) - (mH * 60 + mM);
+          if (diff < 0) diff += 24 * 60; // Lintas hari
+          totalMinutes += diff;
+        }
+      });
+
+      const totalHours = (totalMinutes / 60).toFixed(1);
+      const timeBadge = document.getElementById('timeSummaryBadge');
+      const warningBox = document.getElementById('validationWarning');
+
+      timeBadge.innerText = `Total: ${totalHours} Jam / 7 Jam`;
+
+      if (totalMinutes > 420) { // Lebih dari 7 jam efektif (420 menit)
+        timeBadge.className = "text-xs font-bold px-2 py-1 rounded bg-red-100 text-red-700";
+        warningBox.innerText = `⚠️ Perhatian: Total durasi garapan (${totalHours} Jam) melebihi durasi efektif shift 7 jam!`;
+        warningBox.classList.remove('hidden');
+      } else if (totalMinutes < 420 && totalMinutes > 0) {
+        timeBadge.className = "text-xs font-bold px-2 py-1 rounded bg-amber-100 text-amber-800";
+        warningBox.innerText = `⚠️ Catatan: Total durasi garapan (${totalHours} Jam) kurang dari 7 jam shift kerja.`;
+        warningBox.classList.remove('hidden');
+      } else {
+        timeBadge.className = "text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700";
+        warningBox.classList.add('hidden');
+      }
+    }
+
+    // ==========================================
+    // 5. SUBMIT & OFFLINE CACHING MECHANISM
+    // ==========================================
+    async function submitForm(statusMode) {
+      const form = document.getElementById('shiftForm');
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      const statusMsg = document.getElementById('statusMessage');
+      statusMsg.innerText = "⏳ Memproses penyimpanan...";
+      statusMsg.className = "text-center font-bold text-sm text-blue-600 block";
+
+      // Compile Data Operators
+      const operatorsData = [];
+      document.querySelectorAll('#operatorContainer > div').forEach(el => {
+        operatorsData.push({
+          nama: el.querySelector('.op-nama').value,
+          status: el.querySelector('.op-status').value
+        });
+      });
+
+      // Compile Data Garapan
+      const garapanData = [];
+      document.querySelectorAll('.garapan-card').forEach(card => {
+        const mulai = card.querySelector('.g-mulai').value;
+        const selesai = card.querySelector('.g-selesai').value;
+        let diff = 0;
+        if (mulai && selesai) {
+          const [mH, mM] = mulai.split(':').map(Number);
+          const [sH, sM] = selesai.split(':').map(Number);
+          diff = (sH * 60 + sM) - (mH * 60 + mM);
+          if (diff < 0) diff += 24 * 60;
+        }
+
+        garapanData.push({
+          produk: card.querySelector('.g-produk').value,
+          mulai: mulai,
+          selesai: selesai,
+          durasi_menit: diff,
+          target: parseInt(card.querySelector('.g-target').value) || 0,
+          ok: parseInt(card.querySelector('.g-ok').value) || 0,
+          ng: parseInt(card.querySelector('.g-ng').value) || 0,
+          downtime: parseInt(card.querySelector('.g-downtime').value) || 0,
+          alasan: card.querySelector('.g-alasan').value || ''
+        });
+      });
+
+      const payload = {
+        id: "RPT-" + Date.now(),
+        tanggal: document.getElementById('tanggal').value,
+        shift: parseInt(document.getElementById('shift').value),
+        department: document.getElementById('department').value,
+        mesin: document.getElementById('mesin').value,
+        koordinator: document.getElementById('koordinator').value,
+        assembly_mode: document.getElementById('assembly_mode').value || 'Individu',
+        operators: operatorsData,
+        garapan: garapanData,
+        status: statusMode,
+        created_at: new Date().toISOString()
+      };
+
+      // Jika Offline atau Gagal Koneksi -> Simpan ke LocalStorage
+      if (!navigator.onLine) {
+        saveToLocalStorage(payload);
+        statusMsg.innerText = "✅ Tersimpan di HP (Mode Offline). Akan otomatis tersinkron saat terhubung internet.";
+        statusMsg.className = "text-center font-bold text-sm text-amber-600 block";
+        resetForm();
+        updatePendingBadge();
+        return;
+      }
+
+      // Mode Online -> Simpan Langsung ke Supabase
+      try {
+        const { error } = await supabase.from('shift_reports').insert([payload]);
+        if (error) throw error;
+
+        statusMsg.innerText = `✅ Laporan Berhasil Dikirim (${statusMode})!`;
+        statusMsg.className = "text-center font-bold text-sm text-green-600 block";
+        resetForm();
+      } catch (err) {
+        console.warn("Gagal menyimpan ke Supabase, menyimpan ke lokal:", err);
+        saveToLocalStorage(payload);
+        statusMsg.innerText = "⚠️ Kendala jaringan server. Laporan diamankan di HP sementara.";
+        statusMsg.className = "text-center font-bold text-sm text-amber-600 block";
+        resetForm();
+        updatePendingBadge();
+      }
+    }
+
+    function saveToLocalStorage(payload) {
+      let pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
+      pending.push(payload);
+      localStorage.setItem('pending_shift_reports', JSON.stringify(pending));
+    }
+
+    async function syncOfflineData() {
+      let pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
+      if (pending.length === 0 || !navigator.onLine) return;
+
+      console.log("Menyingkronkan data offline ke Supabase...");
+      let remaining = [];
+
+      for (let item of pending) {
+        try {
+          const { error } = await supabase.from('shift_reports').insert([item]);
+          if (error) remaining.push(item);
+        } catch (e) {
+          remaining.push(item);
+        }
+      }
+
+      localStorage.setItem('pending_shift_reports', JSON.stringify(remaining));
+      updatePendingBadge();
+    }
+
+    function updatePendingBadge() {
+      let pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
+      const badge = document.getElementById('pendingSyncBadge');
+      badge.innerText = `${pending.length} Pending Offline`;
+      if (pending.length > 0) {
+        badge.className = "text-xs font-bold bg-amber-500 text-white px-3 py-1 rounded-full animate-pulse";
+      } else {
+        badge.className = "text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500";
+      }
+    }
+
+    function resetForm() {
+      document.getElementById('garapanContainer').innerHTML = '';
+      garapanCounter = 0;
+      addGarapanItem();
+      checkAssemblyMode();
+      calculateShiftTotals();
+    }
+
+    // ==========================================
+    // 6. DASHBOARD & APPROVAL DATA LOADING
+    // ==========================================
+    async function loadDashboardData() {
+      const tbody = document.getElementById('tableBodyDashboard');
+      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Memuat data terbaru...</td></tr>';
+
+      let records = [];
+
+      // Ambil data dari Supabase
+      if (navigator.onLine) {
+        try {
+          const { data, error } = await supabase
+            .from('shift_reports')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(20);
+          if (!error && data) records = data;
+        } catch (e) { console.error(e); }
+      }
+
+      // Gabungkan dengan data local pending
+      const pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
+      records = [...pending, ...records];
+
+      if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada laporan shift tersimpan.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = '';
+      records.forEach(row => {
+        let totalOK = 0;
+        let totalTarget = 0;
+        if (Array.isArray(row.garapan)) {
+          row.garapan.forEach(g => {
+            totalOK += parseInt(g.ok) || 0;
+            totalTarget += parseInt(g.target) || 0;
+          });
+        }
+
+        const eff = totalTarget > 0 ? ((totalOK / totalTarget) * 100).toFixed(1) : 0;
+        
+        let statusBadge = row.status === 'Approved' 
+          ? `<span class="bg-green-100 text-green-700 px-2 py-1 rounded font-bold">Approved</span>`
+          : row.status === 'Draft'
+          ? `<span class="bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Draft</span>`
+          : `<span class="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold">Submitted</span>`;
+
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="p-2.5 font-semibold">${row.tanggal}<br><span class="text-[10px] text-blue-600 font-bold">Shift ${row.shift}</span></td>
+            <td class="p-2.5 font-bold">${row.department}<br><span class="text-[10px] font-normal text-slate-500">${row.mesin}</span></td>
+            <td class="p-2.5">${row.koordinator}</td>
+            <td class="p-2.5 font-bold"><span class="text-green-600">${totalOK}</span> / ${totalTarget}</td>
+            <td class="p-2.5 font-black ${eff >= 85 ? 'text-green-600' : 'text-amber-600'}">${eff}%</td>
+            <td class="p-2.5">${statusBadge}</td>
+            <td class="p-2.5">
+              ${row.status === 'Submitted' 
+                ? `<button onclick="approveReport('${row.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded text-[11px]">Approve</button>`
+                : `<span class="text-slate-400 font-semibold text-[10px]">-</span>`}
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function approveReport(id) {
+      if (confirm("Konfirmasi persetujuan (Approve) laporan shift ini sebagai Manager/Supervisor?")) {
+        try {
+          const { error } = await supabase.from('shift_reports').update({ status: 'Approved' }).eq('id', id);
+          if (error) throw error;
+          alert("Laporan berhasil di-Approve!");
+          loadDashboardData();
+        } catch (e) {
+          alert("Gagal melakukan Approval: " + e.message);
+        }
+      }
+    }
+
+    // ==========================================
+    // 7. RENDER MASTER VIEW (162 TITIK KERJA)
+    // ==========================================
+    function renderMasterView() {
+      const container = document.getElementById('masterUnitDetails');
+      container.innerHTML = '';
+
+      Object.keys(MASTER_UNITS).forEach(dept => {
+        const units = MASTER_UNITS[dept];
+        container.innerHTML += `
+          <div class="border rounded-xl p-3 bg-slate-50">
+            <h3 class="font-bold text-slate-700 text-xs mb-2 flex justify-between">
+              <span>${dept}</span>
+              <span class="text-blue-600">${units.length} Unit</span>
+            </h3>
+            <div class="flex flex-wrap gap-1.5">
+              ${units.map(u => `<span class="text-[10px] font-semibold bg-white border px-2 py-0.5 rounded text-slate-600">${u}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // ==========================================
+    // INITIALIZATION ON LOAD
+    // ==========================================
+    window.onload = () => {
+      document.getElementById('tanggal').valueAsDate = new Date();
+      updateMesinOptions();
+      addGarapanItem();
+      updatePendingBadge();
+
+      // Network Listener
+      const updateNetStatus = () => {
+        const net = document.getElementById('networkStatus');
+        if (navigator.onLine) {
+          net.innerText = "🟢 Online";
+          syncOfflineData();
+        } else {
+          net.innerText = "🔴 Offline Mode";
+        }
+      };
+
+      window.addEventListener('online', updateNetStatus);
+      window.addEventListener('offline', updateNetStatus);
+      updateNetStatus();
+    };
+  </script>
+</body>
+</html>
