@@ -3,25 +3,69 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>System Laporan Shift & Master Management</title>
+  <title>Enterprise MES - System Laporan Shift & Master Management</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Supabase JS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- PapaParse CDN (Untuk Parser File CSV) -->
+  <!-- PapaParse CDN -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Chart.js CDN (Visualisasi OEE & Performance) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS CDN (Ekspor Excel) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- jsPDF & autoTable CDN (Ekspor PDF) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 pb-24">
+
+  <!-- ============================================== -->
+  <!-- GERBANG LOGIN (WAJIB) -->
+  <!-- Menutupi seluruh aplikasi sampai user login lewat Supabase Auth. -->
+  <!-- CATATAN SETUP: aktifkan Email/Password Auth di project Supabase, -->
+  <!-- dan buat tabel "profiles" (id uuid = auth.users.id, email, role) -->
+  <!-- untuk menentukan role tiap user (admin/supervisor/operator). -->
+  <!-- ============================================== -->
+  <div id="loginScreen" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+      <div class="text-center">
+        <h1 class="text-lg font-bold text-slate-800">Enterprise MES</h1>
+        <p class="text-xs text-slate-500">Silakan login untuk melanjutkan</p>
+      </div>
+      <div class="space-y-2">
+        <input type="email" id="loginEmail" placeholder="Email" class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm">
+        <input type="password" id="loginPassword" placeholder="Password" class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm">
+      </div>
+      <button onclick="handleLogin()" id="btnLogin" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-sm">
+        Masuk
+      </button>
+      <p id="loginError" class="hidden text-xs text-red-600 font-bold text-center"></p>
+      <p class="text-[10px] text-slate-400 text-center">Akun dibuat oleh admin. Hubungi admin sistem jika belum punya akses.</p>
+    </div>
+  </div>
+
+  <!-- Konten aplikasi disembunyikan sampai login berhasil -->
+  <div id="appRoot" class="hidden">
 
   <!-- Header & Navigasi Utama -->
   <div class="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-50">
     <div class="flex justify-between items-center mb-3">
       <div>
-        <h1 class="text-lg font-bold leading-tight">System Laporan Shift</h1>
-        <p class="text-xs text-blue-200" id="networkStatus">🟢 Connecting...</p>
+        <h1 class="text-lg font-bold leading-tight">Enterprise MES - System Laporan Shift</h1>
+        <p class="text-xs text-blue-200" id="networkStatus">🟢 Online (Live Sync Active)</p>
       </div>
-      <div class="text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500" id="pendingSyncBadge">
-        0 Pending Offline
+      <div class="flex items-center gap-2">
+        <span id="currentUserBadge" class="text-[11px] font-bold bg-blue-800 px-2.5 py-1 rounded-full border border-blue-500"></span>
+        <button onclick="handleLogout()" class="bg-blue-800 hover:bg-red-600 text-xs font-bold px-2.5 py-1 rounded-lg text-white shadow">
+          Keluar
+        </button>
+        <button id="btnForceSync" onclick="SyncManager.processQueue()" class="hidden bg-amber-500 hover:bg-amber-600 text-xs font-bold px-2.5 py-1 rounded-lg text-white shadow">
+          ⚡ Sync Sekarang
+        </button>
+        <div class="text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500" id="pendingSyncBadge">
+          0 Pending Offline
+        </div>
       </div>
     </div>
     
@@ -31,10 +75,13 @@
         📝 Form Input Shift
       </button>
       <button type="button" onclick="switchTab('tab-dashboard')" id="btn-tab-dashboard" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
-        📊 Dashboard & Approval
+        📊 Dashboard & OEE Analytics
+      </button>
+      <button type="button" onclick="switchTab('tab-approval')" id="btn-tab-approval" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
+        ✅ Tabel Approval & Filter
       </button>
       <button type="button" onclick="switchTab('tab-master')" id="btn-tab-master" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
-        ⚙️ Master Data Hub
+        ⚙️ Master Data Hub (CRUD)
       </button>
     </div>
   </div>
@@ -42,14 +89,38 @@
   <!-- ============================================== -->
   <!-- TAB 1: FORM INPUT SHIFT -->
   <!-- ============================================== -->
-  <div id="tab-input" class="p-4 max-w-2xl mx-auto space-y-4 block">
+  <div id="tab-input" class="p-4 max-w-3xl mx-auto space-y-4 block">
+    
+    <!-- IoT Ready Switch Simulation -->
+    <div class="bg-indigo-50 border border-indigo-200 p-3 rounded-xl flex justify-between items-center shadow-sm">
+      <div class="flex items-center gap-2">
+        <span class="text-lg">📡</span>
+        <div>
+          <h4 class="text-xs font-bold text-indigo-900">IoT Real-Time Telemetry Mode</h4>
+          <p class="text-[11px] text-indigo-600">Integrasikan data sensor mesin otomatis ke dalam form garapan</p>
+        </div>
+      </div>
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="iotToggle" onchange="toggleIoTMode()" class="sr-only peer">
+        <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+      </label>
+    </div>
+
+    <!-- Shift Duration Validation Warning Banner -->
+    <div id="validationWarning" class="hidden p-3.5 bg-red-100 border-l-4 border-red-500 text-red-800 rounded-r-xl text-xs font-bold space-y-1 shadow-sm">
+      <div class="flex items-center gap-2">
+        <span class="text-base">⚠️</span>
+        <span id="validationWarningText">Total durasi garapan belum sesuai dengan jam standar shift!</span>
+      </div>
+    </div>
+
     <form id="shiftForm" class="space-y-4" onsubmit="event.preventDefault();">
       
       <!-- 1. HEADER INPUT -->
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
         <h2 class="font-bold text-slate-700 border-b pb-2 text-sm">1. Informasi Area & Shift</h2>
         
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">Tanggal</label>
             <input type="date" id="tanggal" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold">
@@ -62,13 +133,13 @@
               <option value="3">Shift 3 (23:00 - 07:00)</option>
             </select>
           </div>
-          <div class="col-span-2">
+          <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">Nama Koordinator Shift</label>
             <input type="text" id="koordinator" required placeholder="Masukkan nama koordinator..." class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm">
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">Department</label>
-            <select id="department" onchange="updateMesinOptions(); checkAssemblyMode();" class="w-full p-2.5 border rounded-lg bg-blue-50 border-blue-300 font-bold text-blue-700 text-sm">
+            <select id="department" onchange="updateMesinOptions(); checkAssemblyMode(); updateOperatorDropdown();" class="w-full p-2.5 border rounded-lg bg-blue-50 border-blue-300 font-bold text-blue-700 text-sm">
               <option value="Blowing">Blowing (30 Mesin)</option>
               <option value="Vinyl">Vinyl (10 Mesin)</option>
               <option value="Sablon">Sablon (25 Mesin)</option>
@@ -76,7 +147,7 @@
               <option value="Assembly">Assembly (20 Line)</option>
             </select>
           </div>
-          <div>
+          <div class="col-span-2 md:col-span-2">
             <label class="block text-xs font-bold text-slate-500 mb-1">Nomor Mesin / Line</label>
             <select id="mesin" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold"></select>
           </div>
@@ -89,15 +160,15 @@
           <h2 class="font-bold text-slate-700 text-sm">2. Data Operator / Tim Kerja</h2>
           <div id="assemblyModeWrapper" class="hidden">
             <select id="assembly_mode" onchange="toggleOperatorMode()" class="text-xs bg-yellow-100 border border-yellow-400 p-1.5 rounded font-bold text-yellow-800">
-              <option value="Individu">Mode: Individu</option>
+              <option value="Individu">Mode: Individu (Multi-Operator Line)</option>
               <option value="Tim">Mode: Tim / Kelompok</option>
             </select>
           </div>
         </div>
 
         <div id="operatorContainer" class="space-y-2">
-          <div class="flex gap-2">
-            <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Operator Utama" required list="karyawanList">
+          <div class="flex gap-2 op-row">
+            <input type="text" id="firstOpInput" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Operator Utama" required list="karyawanList">
             <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
               <option value="Hadir">Hadir</option>
               <option value="Rolling/Bantuan">Rolling</option>
@@ -105,139 +176,287 @@
             </select>
           </div>
         </div>
-        <!-- Datalist Autofill dari Master Karyawan -->
         <datalist id="karyawanList"></datalist>
 
-        <button type="button" id="btnAddOperator" onclick="addOperatorInput()" class="hidden w-full py-2 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100">
-          + Tambah Operator Ke-2 s/d 10 (Kelompok)
+        <button type="button" id="btnAddOperator" onclick="addOperatorInput()" class="hidden w-full py-2.5 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100">
+          + Tambah Operator
         </button>
       </div>
 
       <!-- 3. HASIL PRODUKSI MULTI-GARAPAN -->
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
         <div class="flex justify-between items-center border-b pb-2">
-          <h2 class="font-bold text-slate-700 text-sm">3. Multi-Garapan Produk (Maks. 3)</h2>
-          <span id="timeSummaryBadge" class="text-xs font-bold px-2 py-1 rounded bg-slate-100 text-slate-700">
-            Total: 0 Jam / 7 Jam
+          <h2 class="font-bold text-slate-700 text-sm">3. Dynamic Multi-Garapan Produk & Traceability</h2>
+          <span id="timeSummaryBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border">
+            Total: 0 Jam / 8 Jam Shift
           </span>
         </div>
-
-        <p class="text-xs text-slate-500">Durasi kerja efektif: 7 jam per shift (dikurangi 1 jam istirahat).</p>
 
         <div id="garapanContainer" class="space-y-4"></div>
         <datalist id="produkList"></datalist>
 
-        <button type="button" id="btnAddGarapan" onclick="addGarapanItem()" class="w-full py-3 border-2 border-dashed border-slate-300 text-slate-600 rounded-xl text-sm font-bold bg-slate-50 hover:bg-slate-100">
-          + Tambah Garapan Baru
+        <button type="button" id="btnAddGarapan" onclick="addGarapanItem()" class="w-full py-3 border-2 border-dashed border-blue-400 text-blue-700 rounded-xl text-sm font-bold bg-blue-50 hover:bg-blue-100 flex items-center justify-center gap-1">
+          <span>➕</span> Tambah Garapan Produk Baru
         </button>
       </div>
 
-      <!-- STATUS & ACTION BUTTONS -->
-      <div id="validationWarning" class="hidden p-3 bg-red-100 border border-red-300 text-red-700 rounded-xl text-xs font-bold"></div>
+      <!-- REALTIME OEE SUMMARY BAR -->
+      <div class="bg-indigo-900 text-white p-4 rounded-xl shadow-md grid grid-cols-4 gap-2 text-center">
+        <div>
+          <p class="text-[10px] text-indigo-300 uppercase font-bold">Availability</p>
+          <p id="oeeAvail" class="text-lg font-black">0%</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-indigo-300 uppercase font-bold">Performance</p>
+          <p id="oeePerf" class="text-lg font-black">0%</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-indigo-300 uppercase font-bold">Quality</p>
+          <p id="oeeQual" class="text-lg font-black">0%</p>
+        </div>
+        <div class="border-l border-indigo-700">
+          <p class="text-[10px] text-amber-400 uppercase font-bold">OEE Score</p>
+          <p id="oeeTotal" class="text-xl font-black text-amber-400">0%</p>
+        </div>
+      </div>
 
+      <!-- STATUS & ACTION BUTTONS -->
       <div class="grid grid-cols-2 gap-3">
         <button type="button" onclick="submitForm('Draft')" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3.5 rounded-xl shadow text-sm">
           💾 Simpan Draft
         </button>
-        <button type="button" onclick="submitForm('Submitted')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow text-sm">
+        <button type="button" id="btnSubmitForm" onclick="submitForm('Submitted')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           🚀 Kirim Laporan
         </button>
       </div>
       
-      <p id="statusMessage" class="text-center font-bold text-sm hidden"></p>
+      <p id="statusMessage" class="text-center font-bold text-sm hidden p-2 rounded-lg"></p>
     </form>
   </div>
 
   <!-- ============================================== -->
-  <!-- TAB 2: DASHBOARD & APPROVAL WORKFLOW -->
+  <!-- TAB 2: DASHBOARD & OEE ANALYTICS (DENGAN FILTER INTERAKTIF) -->
   <!-- ============================================== -->
-  <div id="tab-dashboard" class="p-4 max-w-4xl mx-auto hidden space-y-4">
-    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-      <div class="flex justify-between items-center mb-4">
-        <div>
-          <h2 class="font-bold text-slate-800 text-base">Monitoring & Approval Shift</h2>
-          <p class="text-xs text-slate-500">Laporan yang memerlukan persetujuan Supervisor/Manager</p>
-        </div>
-        <button type="button" onclick="loadDashboardData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">
-          🔄 Refresh Data
+  <div id="tab-dashboard" class="p-4 max-w-6xl mx-auto hidden space-y-4">
+    
+    <!-- FILTER INTERAKTIF DASHBOARD -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-xs text-indigo-800 uppercase tracking-wider flex items-center gap-1">
+          🔍 Filter Analytics Interactive
+        </h3>
+        <button onclick="resetDashFilters()" class="text-[11px] font-bold text-blue-600 hover:underline">
+          Reset Filter
         </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Rentang Tanggal</label>
+          <div class="flex gap-1">
+            <input type="date" id="dashStartDate" onchange="renderDashboardAnalytics()" class="w-full p-2 border rounded-lg text-xs bg-slate-50">
+            <input type="date" id="dashEndDate" onchange="renderDashboardAnalytics()" class="w-full p-2 border rounded-lg text-xs bg-slate-50">
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Shift</label>
+          <select id="dashFilterShift" onchange="renderDashboardAnalytics()" class="w-full p-2 border rounded-lg text-xs bg-slate-50 font-semibold">
+            <option value="">Semua Shift</option>
+            <option value="1">Shift 1</option>
+            <option value="2">Shift 2</option>
+            <option value="3">Shift 3</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Department</label>
+          <select id="dashFilterDept" onchange="updateDashMesinOptions(); renderDashboardAnalytics();" class="w-full p-2 border rounded-lg text-xs bg-slate-50 font-semibold">
+            <option value="">Semua Department</option>
+            <option value="Blowing">Blowing</option>
+            <option value="Vinyl">Vinyl</option>
+            <option value="Sablon">Sablon</option>
+            <option value="Painting">Painting</option>
+            <option value="Assembly">Assembly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Line / Mesin</label>
+          <select id="dashFilterMesin" onchange="renderDashboardAnalytics()" class="w-full p-2 border rounded-lg text-xs bg-slate-50 font-semibold">
+            <option value="">Semua Mesin/Line</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUMMARY CARDS -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <p class="text-xs text-slate-500 font-bold">Rata-Rata OEE Pabrik</p>
+        <p id="dashOeeAvg" class="text-2xl font-black text-blue-700">0%</p>
+      </div>
+      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <p class="text-xs text-slate-500 font-bold">Total Production OK</p>
+        <p id="dashTotalOk" class="text-2xl font-black text-emerald-600">0 Pcs</p>
+      </div>
+      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <p class="text-xs text-slate-500 font-bold">Total Reject (NG)</p>
+        <p id="dashTotalNg" class="text-2xl font-black text-red-600">0 Pcs</p>
+      </div>
+      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <p class="text-xs text-slate-500 font-bold">Total Downtime Mesin</p>
+        <p id="dashTotalDt" class="text-2xl font-black text-amber-600">0 Menit</p>
+      </div>
+    </div>
+
+    <!-- 3 Chart.js Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Chart 1: Pareto Downtime -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <h3 class="font-bold text-slate-800 text-xs uppercase mb-2 text-indigo-700">📊 Diagram Pareto Penyebab Downtime</h3>
+        <div class="h-60">
+          <canvas id="chartParetoDowntime"></canvas>
+        </div>
+      </div>
+      <!-- Chart 2: OEE Component Breakdown -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <h3 class="font-bold text-slate-800 text-xs uppercase mb-2 text-indigo-700">⚙️ Breakdown Komponen OEE Average</h3>
+        <div class="h-60">
+          <canvas id="chartOeeComponents"></canvas>
+        </div>
+      </div>
+      <!-- Chart 3: OEE Trend -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <h3 class="font-bold text-slate-800 text-xs uppercase mb-2 text-indigo-700">📈 Tren Skor OEE Harian</h3>
+        <div class="h-60">
+          <canvas id="chartOeeTrend"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- TAB 3: TABEL APPROVAL WITH ADVANCED FILTER & EXPORT -->
+  <!-- ============================================== -->
+  <div id="tab-approval" class="p-4 max-w-6xl mx-auto hidden space-y-4">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-2">
+        <div>
+          <h2 class="font-bold text-slate-800 text-base">Filter & Approval Laporan Shift</h2>
+          <p class="text-xs text-slate-500">Persetujuan, Verifikasi Data Operasional & Export Laporan</p>
+        </div>
+        
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="exportToExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-1">
+            📊 Export Excel
+          </button>
+          <button type="button" onclick="exportToPDF()" class="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-1">
+            📄 Export PDF
+          </button>
+          <button type="button" onclick="loadApprovalData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Advanced Approval Filters (Layout diperbaiki agar tidak tumpang tindih) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <div class="min-w-0">
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Cari Keywords</label>
+          <input type="text" id="appSearch" oninput="applyApprovalFilter()" placeholder="Mesin, WO, Shift..." class="w-full p-2 border rounded-lg text-xs bg-white">
+        </div>
+        <div class="min-w-0">
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Date Range (Mulai - Selesai)</label>
+          <div class="flex gap-1">
+            <input type="date" id="appStartDate" onchange="applyApprovalFilter()" class="w-1/2 p-1.5 border rounded-lg text-[11px] bg-white">
+            <input type="date" id="appEndDate" onchange="applyApprovalFilter()" class="w-1/2 p-1.5 border rounded-lg text-[11px] bg-white">
+          </div>
+        </div>
+        <div class="min-w-0">
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Koordinator</label>
+          <input type="text" id="appFilterKoordinator" oninput="applyApprovalFilter()" placeholder="Filter Nama..." class="w-full p-2 border rounded-lg text-xs bg-white">
+        </div>
+        <div class="min-w-0">
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Filter Department</label>
+          <select id="appFilterDept" onchange="applyApprovalFilter()" class="w-full p-2 border rounded-lg text-xs bg-white">
+            <option value="">Semua Department</option>
+            <option value="Blowing">Blowing</option>
+            <option value="Vinyl">Vinyl</option>
+            <option value="Sablon">Sablon</option>
+            <option value="Painting">Painting</option>
+            <option value="Assembly">Assembly</option>
+          </select>
+        </div>
+        <div class="min-w-0">
+          <label class="block text-[11px] font-bold text-slate-600 mb-1">Kategori Skor OEE</label>
+          <select id="appFilterOeeCategory" onchange="applyApprovalFilter()" class="w-full p-2 border rounded-lg text-xs bg-white">
+            <option value="">Semua Skor</option>
+            <option value="World Class">World Class (>85%)</option>
+            <option value="Good">Good (70% - 85%)</option>
+            <option value="Needs Improvement">Needs Improvement (&lt;70%)</option>
+          </select>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse min-w-[650px]">
+        <table id="approvalTable" class="w-full text-left border-collapse min-w-[750px]">
           <thead>
             <tr class="bg-slate-100 text-slate-600 text-xs font-bold uppercase">
               <th class="p-2.5 border-b">Tanggal / Shift</th>
               <th class="p-2.5 border-b">Dept / Unit</th>
               <th class="p-2.5 border-b">Koordinator</th>
               <th class="p-2.5 border-b">Hasil OK / Target</th>
-              <th class="p-2.5 border-b">Efisiensi</th>
+              <th class="p-2.5 border-b">OEE Score</th>
               <th class="p-2.5 border-b">Status</th>
-              <th class="p-2.5 border-b">Aksi Approval</th>
+              <th class="p-2.5 border-b text-center">Aksi Approval</th>
             </tr>
           </thead>
-          <tbody id="tableBodyDashboard" class="text-xs">
+          <tbody id="tableBodyApproval" class="text-xs">
             <tr><td colspan="7" class="p-4 text-center text-slate-400">Tekan Refresh untuk memuat data...</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="flex justify-between items-center pt-2 border-t text-xs">
+        <span id="pageInfo" class="text-slate-500 font-medium">Halaman 1 dari 1</span>
+        <div class="flex gap-2">
+          <button id="btnPrevPage" onclick="changePage(-1)" class="px-3 py-1.5 bg-slate-200 text-slate-700 font-bold rounded-lg disabled:opacity-50">Previous</button>
+          <button id="btnNextPage" onclick="changePage(1)" class="px-3 py-1.5 bg-blue-600 text-white font-bold rounded-lg disabled:opacity-50">Next</button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ============================================== -->
-  <!-- TAB 3: MASTER DATA HUB (MESIN, KARYAWAN, TARGET) -->
+  <!-- TAB 4: MASTER DATA HUB (CRUD & INTERACTIVE MACHINES) -->
   <!-- ============================================== -->
-  <div id="tab-master" class="p-4 max-w-4xl mx-auto hidden space-y-4">
-    <!-- SUB-NAVIGASI MASTER DATA -->
+  <div id="tab-master" class="p-4 max-w-5xl mx-auto hidden space-y-4">
     <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex space-x-2">
-      <button onclick="switchMasterSubTab('sub-mesin')" id="btn-sub-mesin" class="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg">
-        🏭 Master Unit (162)
-      </button>
-      <button onclick="switchMasterSubTab('sub-karyawan')" id="btn-sub-karyawan" class="px-3 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200">
-        👥 Master Karyawan
+      <button onclick="switchMasterSubTab('sub-karyawan')" id="btn-sub-karyawan" class="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg">
+        👥 Master Karyawan (CRUD & Import)
       </button>
       <button onclick="switchMasterSubTab('sub-target')" id="btn-sub-target" class="px-3 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200">
-        🎯 Master Target Produksi
+        🎯 Master Target Output
+      </button>
+      <button onclick="switchMasterSubTab('sub-mesin')" id="btn-sub-mesin" class="px-3 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200">
+        🏭 Master Unit Mesin
       </button>
     </div>
 
-    <!-- 1. SUB-TAB: MASTER UNIT (162) -->
-    <div id="sub-mesin" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-      <h2 class="font-bold text-slate-800 text-base mb-1">Master Titik Kerja Pabrik (162 Unit)</h2>
-      <p class="text-xs text-slate-500 mb-4">Struktur terdaftar unit mesin & line produksi aktif.</p>
-      
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center mb-6">
-        <div class="bg-blue-50 p-3 rounded-lg border border-blue-100"><p class="text-2xl font-black text-blue-700">30</p><p class="text-[11px] text-slate-600 font-semibold">Blowing</p></div>
-        <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100"><p class="text-2xl font-black text-indigo-700">10</p><p class="text-[11px] text-slate-600 font-semibold">Vinyl</p></div>
-        <div class="bg-purple-50 p-3 rounded-lg border border-purple-100"><p class="text-2xl font-black text-purple-700">25</p><p class="text-[11px] text-slate-600 font-semibold">Sablon</p></div>
-        <div class="bg-pink-50 p-3 rounded-lg border border-pink-100"><p class="text-2xl font-black text-pink-700">16</p><p class="text-[11px] text-slate-600 font-semibold">Painting</p></div>
-        <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-100"><p class="text-2xl font-black text-emerald-700">20</p><p class="text-[11px] text-slate-600 font-semibold">Assembly</p></div>
-      </div>
-
-      <div class="space-y-3" id="masterUnitDetails"></div>
-    </div>
-
-    <!-- 2. SUB-TAB: MASTER KARYAWAN + IMPORT CSV -->
-    <div id="sub-karyawan" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hidden space-y-4">
-      <div class="flex justify-between items-center border-b pb-3">
+    <!-- 1. SUB-TAB: MASTER KARYAWAN -->
+    <div id="sub-karyawan" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-2">
         <div>
-          <h2 class="font-bold text-slate-800 text-base">Master Karyawan / Operator</h2>
-          <p class="text-xs text-slate-500">Database personil untuk autocomplete di Form Input Shift</p>
+          <h2 class="font-bold text-slate-800 text-base">CRUD & Import Master Karyawan</h2>
+          <p class="text-xs text-slate-500">Kelola personil secara manual atau via Upload CSV</p>
         </div>
-        <button onclick="loadKaryawanData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">🔄 Refresh</button>
-      </div>
-
-      <!-- Area Upload CSV Karyawan -->
-      <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
-        <h3 class="text-xs font-bold text-blue-900">📥 Import Data Karyawan via CSV / Excel</h3>
-        <p class="text-[11px] text-blue-700">Format Kolom CSV: <code class="bg-white px-1 py-0.5 rounded font-mono border">nik, nama, department, jabatan</code></p>
-        <div class="flex gap-2">
-          <input type="file" id="fileCsvKaryawan" accept=".csv" class="text-xs bg-white p-2 border rounded-lg w-full">
-          <button onclick="importCsvKaryawan()" class="bg-blue-700 hover:bg-blue-800 text-white font-bold px-4 py-2 rounded-lg text-xs whitespace-nowrap">Upload & Import</button>
+        <div class="flex items-center gap-2">
+          <label class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1">
+            📁 Import CSV
+            <input type="file" accept=".csv" class="hidden" onchange="importCSV('karyawan', this)">
+          </label>
+          <button onclick="openModalKaryawan()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700">+ Tambah Manual</button>
+          <button onclick="loadKaryawanData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">🔄 Refresh</button>
         </div>
       </div>
 
-      <!-- Tabel Master Karyawan -->
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
@@ -246,76 +465,309 @@
               <th class="p-2 border-b">Nama Lengkap</th>
               <th class="p-2 border-b">Department</th>
               <th class="p-2 border-b">Jabatan</th>
+              <th class="p-2 border-b text-center">Aksi Interaktif</th>
             </tr>
           </thead>
           <tbody id="tableBodyKaryawan">
-            <tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada data karyawan terdaftar. Upload CSV di atas.</td></tr>
+            <tr><td colspan="5" class="p-4 text-center text-slate-400">Tekan Refresh untuk memuat...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- 3. SUB-TAB: MASTER TARGET PRODUKSI + IMPORT CSV -->
+    <!-- 2. SUB-TAB: MASTER TARGET PRODUK -->
     <div id="sub-target" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hidden space-y-4">
-      <div class="flex justify-between items-center border-b pb-3">
+      <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-2">
         <div>
-          <h2 class="font-bold text-slate-800 text-base">Master Target Output Produk</h2>
-          <p class="text-xs text-slate-500">Database acuan standar output barang per jam / shift</p>
+          <h2 class="font-bold text-slate-800 text-base">CRUD & Import Master Target Output</h2>
+          <p class="text-xs text-slate-500">Kelola standar output produk per shift atau via Upload CSV</p>
         </div>
-        <button onclick="loadTargetData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">🔄 Refresh</button>
-      </div>
-
-      <!-- Area Upload CSV Target -->
-      <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
-        <h3 class="text-xs font-bold text-emerald-900">📥 Import Target Produksi via CSV / Excel</h3>
-        <p class="text-[11px] text-emerald-700">Format Kolom CSV: <code class="bg-white px-1 py-0.5 rounded font-mono border">department, nama_produk, target_per_jam, target_per_shift</code></p>
-        <div class="flex gap-2">
-          <input type="file" id="fileCsvTarget" accept=".csv" class="text-xs bg-white p-2 border rounded-lg w-full">
-          <button onclick="importCsvTarget()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2 rounded-lg text-xs whitespace-nowrap">Upload & Import</button>
+        <div class="flex items-center gap-2">
+          <label class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1">
+            📁 Import CSV
+            <input type="file" accept=".csv" class="hidden" onchange="importCSV('target', this)">
+          </label>
+          <button onclick="openModalTarget()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700">+ Tambah Target</button>
+          <button onclick="loadTargetData()" class="bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100">🔄 Refresh</button>
         </div>
       </div>
 
-      <!-- Tabel Master Target -->
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
             <tr class="bg-slate-100 text-slate-600 font-bold uppercase">
               <th class="p-2 border-b">Department</th>
               <th class="p-2 border-b">Nama Produk / Artikel</th>
-              <th class="p-2 border-b">Std Output / Jam</th>
-              <th class="p-2 border-b">Std Target / Shift (7 Jam)</th>
+              <th class="p-2 border-b">Std Target / Shift</th>
+              <th class="p-2 border-b text-center">Aksi Interaktif</th>
             </tr>
           </thead>
           <tbody id="tableBodyTarget">
-            <tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada data target terdaftar. Upload CSV di atas.</td></tr>
+            <tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada data target terdaftar.</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
+    <!-- 3. SUB-TAB: MASTER UNIT / MESIN -->
+    <div id="sub-mesin" class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hidden space-y-4">
+      <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-2">
+        <div>
+          <h2 class="font-bold text-slate-800 text-base">Master Unit Mesin Interactive Hub</h2>
+          <p class="text-xs text-slate-500">Kelola unit mesin aktif, tambah mesin baru, atau import via CSV</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="openModalMesin()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700">+ Tambah Mesin Baru</button>
+          <label class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1">
+            📁 Import CSV Mesin
+            <input type="file" accept=".csv" class="hidden" onchange="importCSV('mesin', this)">
+          </label>
+        </div>
+      </div>
+      <div class="space-y-3 mt-4" id="masterUnitDetails"></div>
+    </div>
   </div>
 
+  <!-- MODAL EDIT/ADD KARYAWAN -->
+  <div id="modalKaryawan" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-4 space-y-3">
+      <h3 class="font-bold text-slate-800 border-b pb-2 text-sm" id="modalKaryawanTitle">Form Data Karyawan</h3>
+      <input type="hidden" id="m_karyawan_id">
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="block font-bold mb-1">NIK</label>
+          <input type="text" id="m_nik" class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Nama Lengkap</label>
+          <input type="text" id="m_nama" required class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Department</label>
+          <select id="m_dept" class="w-full p-2 border rounded-lg bg-slate-50">
+            <option value="Blowing">Blowing</option>
+            <option value="Vinyl">Vinyl</option>
+            <option value="Sablon">Sablon</option>
+            <option value="Painting">Painting</option>
+            <option value="Assembly">Assembly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Jabatan</label>
+          <input type="text" id="m_jabatan" value="Operator" class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t">
+        <button type="button" onclick="closeModalKaryawan()" class="px-3 py-1.5 bg-slate-200 rounded-lg text-xs font-bold">Batal</button>
+        <button type="button" onclick="saveKaryawanManual()" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL TARGET PRODUK -->
+  <div id="modalTarget" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-4 space-y-3">
+      <h3 class="font-bold text-slate-800 border-b pb-2 text-sm">Form Target Produk</h3>
+      <input type="hidden" id="m_target_id">
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="block font-bold mb-1">Department</label>
+          <select id="mt_dept" class="w-full p-2 border rounded-lg bg-slate-50">
+            <option value="Blowing">Blowing</option>
+            <option value="Vinyl">Vinyl</option>
+            <option value="Sablon">Sablon</option>
+            <option value="Painting">Painting</option>
+            <option value="Assembly">Assembly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Nama Produk / Artikel</label>
+          <input type="text" id="mt_produk" required class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Standard Target / Shift</label>
+          <input type="number" id="mt_target" required class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t">
+        <button type="button" onclick="closeModalTarget()" class="px-3 py-1.5 bg-slate-200 rounded-lg text-xs font-bold">Batal</button>
+        <button type="button" onclick="saveTargetManual()" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold">Simpan Target</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL MESIN BARU -->
+  <div id="modalMesin" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-4 space-y-3">
+      <h3 class="font-bold text-slate-800 border-b pb-2 text-sm">Form Tambah Unit Mesin Baru</h3>
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="block font-bold mb-1">Department Target</label>
+          <select id="mm_dept" class="w-full p-2 border rounded-lg bg-slate-50">
+            <option value="Blowing">Blowing</option>
+            <option value="Vinyl">Vinyl</option>
+            <option value="Sablon">Sablon</option>
+            <option value="Painting">Painting</option>
+            <option value="Assembly">Assembly</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Kode / Nama Unit Mesin Baru</label>
+          <input type="text" id="mm_nama" placeholder="Contoh: Blowing 31 / Line 21" required class="w-full p-2 border rounded-lg bg-slate-50">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t">
+        <button type="button" onclick="closeModalMesin()" class="px-3 py-1.5 bg-slate-200 rounded-lg text-xs font-bold">Batal</button>
+        <button type="button" onclick="saveMesinManual()" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold">Tambah Unit Mesin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT ENGINE & OFFLINE MANAGER -->
   <script>
-    // ==========================================
-    // 1. SAFE SUPABASE INITIALIZATION
-    // ==========================================
+    // CONFIGURATION & INDEXEDDB
     const SUPABASE_URL = "https://ffpgcfwwvrwbsbjdmhfg.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_RMlIEDPwSZq0b_F2PGn3DQ_lNdzwv6C";
     let supabaseClient = null;
 
     function getSupabase() {
-      if (!supabaseClient) {
-        if (window.supabase && window.supabase.createClient) {
-          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
+      if (!supabaseClient && window.supabase && window.supabase.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       }
       return supabaseClient;
     }
 
-    // ==========================================
-    // 2. MASTER UNITS (162 TITIK KERJA)
-    // ==========================================
-    const MASTER_UNITS = {
+    // ============================================
+    // SECURITY HELPER: HTML Escaping (mencegah XSS)
+    // Semua data dinamis (nama karyawan, hasil import CSV, dll)
+    // WAJIB melewati fungsi ini sebelum dimasukkan ke innerHTML.
+    // ============================================
+    function escapeHtml(value) {
+      if (value === null || value === undefined) return '';
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Jumlahkan seluruh baris garapan dalam satu laporan (bukan hanya index 0)
+    // supaya laporan multi-produk tidak kehilangan data di tabel/export.
+    function aggregateGarapan(row) {
+      const list = Array.isArray(row.garapan) ? row.garapan : [];
+      const agg = { target: 0, ok: 0, ng: 0, downtime: 0, produkCount: list.length, produkNames: [] };
+      list.forEach(g => {
+        agg.target += g.target || 0;
+        agg.ok += g.hasil_ok || 0;
+        agg.ng += g.hasil_ng || 0;
+        agg.downtime += g.downtime_menit || 0;
+        if (g.produk) agg.produkNames.push(g.produk);
+      });
+      return agg;
+    }
+
+    // Offline First & Auto Sync Engine Listener
+    window.addEventListener('online', () => {
+      document.getElementById('networkStatus').innerText = '🟢 Online (Live Sync Active)';
+      SyncManager.processQueue();
+    });
+    window.addEventListener('offline', () => {
+      document.getElementById('networkStatus').innerText = '🔴 Offline Mode (Auto-Draft Activated)';
+    });
+
+    const SyncManager = {
+      dbName: 'MES_Offline_DB',
+      dbVersion: 1,
+      async getDB() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(this.dbName, this.dbVersion);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('queue')) db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      },
+      async addQueue(payload) {
+        const db = await this.getDB();
+        const tx = db.transaction('queue', 'readwrite');
+        tx.objectStore('queue').add({ payload, timestamp: new Date().toISOString() });
+        this.updateBadge();
+      },
+      async getQueue() {
+        const db = await this.getDB();
+        return new Promise((resolve) => {
+          const tx = db.transaction('queue', 'readonly');
+          const req = tx.objectStore('queue').getAll();
+          req.onsuccess = () => resolve(req.result || []);
+        });
+      },
+      async clearQueue() {
+        const db = await this.getDB();
+        const tx = db.transaction('queue', 'readwrite');
+        tx.objectStore('queue').clear();
+        this.updateBadge();
+      },
+      async deleteQueueItem(id) {
+        const db = await this.getDB();
+        const tx = db.transaction('queue', 'readwrite');
+        tx.objectStore('queue').delete(id);
+        return new Promise((resolve) => { tx.oncomplete = () => resolve(); });
+      },
+      async updateBadge() {
+        const queue = await this.getQueue();
+        const badge = document.getElementById('pendingSyncBadge');
+        const syncBtn = document.getElementById('btnForceSync');
+        badge.innerText = `${queue.length} Pending Offline Drafts`;
+        if (queue.length > 0) {
+          badge.className = "text-xs font-bold bg-amber-600 px-3 py-1 rounded-full border border-amber-400 animate-pulse";
+          if (navigator.onLine) syncBtn.classList.remove('hidden');
+        } else {
+          badge.className = "text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500";
+          syncBtn.classList.add('hidden');
+        }
+      },
+      async processQueue() {
+        if (!navigator.onLine) return;
+        const queue = await this.getQueue();
+        if (queue.length === 0) return;
+        const client = getSupabase();
+        if (!client) return;
+
+        let successCount = 0;
+        let failCount = 0;
+        // PENTING: hanya hapus item yang BERHASIL sync satu per satu.
+        // Item yang gagal (mis. koneksi putus di tengah jalan) TETAP
+        // ada di antrean supaya tidak hilang, dan akan dicoba lagi nanti.
+        for (const item of queue) {
+          try {
+            const { error } = await client.from('laporan_shift').insert([item.payload]);
+            if (!error) {
+              await this.deleteQueueItem(item.id);
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } catch (e) {
+            failCount++;
+          }
+        }
+
+        this.updateBadge();
+
+        if (successCount > 0 && failCount === 0) {
+          alert(`✅ Auto-Sync Berhasil! ${successCount} Laporan Offline terunggah ke Cloud.`);
+        } else if (successCount > 0 && failCount > 0) {
+          alert(`⚠️ Sync Sebagian Berhasil: ${successCount} laporan terunggah, ${failCount} laporan masih di antrean dan akan dicoba lagi.`);
+        } else if (failCount > 0) {
+          alert(`❌ Auto-Sync Gagal: ${failCount} laporan masih tersimpan aman di antrean offline, akan dicoba lagi nanti.`);
+        }
+      }
+    };
+
+    let MASTER_UNITS = {
       'Blowing': Array.from({length: 30}, (_, i) => `Blowing ${String(i+1).padStart(2, '0')}`),
       'Vinyl': Array.from({length: 10}, (_, i) => `Vinyl ${String(i+1).padStart(2, '0')}`),
       'Sablon': Array.from({length: 25}, (_, i) => `Sablon ${String(i+1).padStart(2, '0')}`),
@@ -323,47 +775,56 @@
       'Assembly': Array.from({length: 20}, (_, i) => `Line Assembly ${String(i+1).padStart(2, '0')}`)
     };
 
-    // ==========================================
-    // 3. TAB & SUB-TAB SWITCHING
-    // ==========================================
+    const DOWNTIME_CATEGORIES = [
+      "Tidak Ada Downtime",
+      "Kerusakan Mesin (Mechanical Failure)",
+      "Gangguan Kelistrikan (Electrical Fault)",
+      "Set-Up & Adjustment Mold",
+      "Bahan Baku Habis / Delay Material",
+      "Pembersihan / Cleaning Routine",
+      "Ganti Artikel / Changeover",
+      "Tunggu Operator / Rest Time",
+      "Lain-Lain (Lihat Catatan)"
+    ];
+
     function switchTab(tabId) {
-      document.getElementById('tab-input').classList.add('hidden');
-      document.getElementById('tab-dashboard').classList.add('hidden');
-      document.getElementById('tab-master').classList.add('hidden');
-      
-      const target = document.getElementById(tabId);
-      if (target) target.classList.remove('hidden');
-
-      ['input', 'dashboard', 'master'].forEach(t => {
-        const btn = document.getElementById('btn-tab-' + t);
-        if (btn) {
-          if ('tab-' + t === tabId) {
-            btn.className = "px-4 py-2 bg-white text-blue-700 font-bold rounded-lg whitespace-nowrap shadow cursor-pointer";
-          } else {
-            btn.className = "px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer";
-          }
+      // Pertahanan tambahan di sisi UI (bukan pengganti RLS di server):
+      // cegah pindah ke tab yang dibatasi kalau role user tidak diizinkan.
+      if (typeof RESTRICTED_TABS !== 'undefined' && RESTRICTED_TABS[tabId]) {
+        const role = (typeof currentUser !== 'undefined' && currentUser?.role) || 'operator';
+        if (!RESTRICTED_TABS[tabId].includes(role)) {
+          alert('Anda tidak memiliki akses ke menu ini.');
+          return;
         }
+      }
+      ['tab-input', 'tab-dashboard', 'tab-approval', 'tab-master'].forEach(t => {
+        document.getElementById(t).classList.add('hidden');
+        const btn = document.getElementById('btn-' + t);
+        if (btn) btn.className = "px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer";
       });
+      
+      document.getElementById(tabId).classList.remove('hidden');
+      document.getElementById('btn-' + tabId).className = "px-4 py-2 bg-white text-blue-700 font-bold rounded-lg whitespace-nowrap shadow cursor-pointer";
 
-      if (tabId === 'tab-dashboard') loadDashboardData();
+      if (tabId === 'tab-dashboard') {
+        updateDashMesinOptions();
+        renderDashboardAnalytics();
+      }
+      if (tabId === 'tab-approval') loadApprovalData();
       if (tabId === 'tab-master') renderMasterView();
     }
 
     function switchMasterSubTab(subId) {
       ['sub-mesin', 'sub-karyawan', 'sub-target'].forEach(s => {
-        const el = document.getElementById(s);
-        const btn = document.getElementById('btn-' + s);
-        if (s === subId) {
-          el.classList.remove('hidden');
-          btn.className = "px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg";
-        } else {
-          el.classList.add('hidden');
-          btn.className = "px-3 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200";
-        }
+        document.getElementById(s).classList.add('hidden');
+        document.getElementById('btn-' + s).className = "px-3 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-200";
       });
+      document.getElementById(subId).classList.remove('hidden');
+      document.getElementById('btn-' + subId).className = "px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg";
 
       if (subId === 'sub-karyawan') loadKaryawanData();
       if (subId === 'sub-target') loadTargetData();
+      if (subId === 'sub-mesin') renderMasterView();
     }
 
     function updateMesinOptions() {
@@ -372,18 +833,53 @@
       selectMesin.innerHTML = '';
       if (MASTER_UNITS[dept]) {
         MASTER_UNITS[dept].forEach(m => {
-          selectMesin.innerHTML += `<option value="${m}">${m}</option>`;
+          selectMesin.innerHTML += `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`;
         });
       }
+    }
+
+    // Helper Opsi Mesin untuk Filter Dashboard
+    function updateDashMesinOptions() {
+      const dept = document.getElementById('dashFilterDept').value;
+      const selectMesin = document.getElementById('dashFilterMesin');
+      selectMesin.innerHTML = '<option value="">Semua Mesin/Line</option>';
+      
+      if (dept && MASTER_UNITS[dept]) {
+        MASTER_UNITS[dept].forEach(m => {
+          selectMesin.innerHTML += `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`;
+        });
+      } else if (!dept) {
+        Object.keys(MASTER_UNITS).forEach(d => {
+          MASTER_UNITS[d].forEach(m => {
+            selectMesin.innerHTML += `<option value="${escapeHtml(m)}">${escapeHtml(m)} (${escapeHtml(d)})</option>`;
+          });
+        });
+      }
+    }
+
+    let allKaryawanCache = [];
+    async function updateOperatorDropdown() {
+      const dept = document.getElementById('department').value;
+      const list = document.getElementById('karyawanList');
+      list.innerHTML = '';
+      
+      const filtered = allKaryawanCache.filter(k => !k.department || k.department === dept);
+      filtered.forEach(k => {
+        list.innerHTML += `<option value="${escapeHtml(k.nama)}">`;
+      });
     }
 
     function checkAssemblyMode() {
       const dept = document.getElementById('department').value;
       const modeWrapper = document.getElementById('assemblyModeWrapper');
+      const btnAddOp = document.getElementById('btnAddOperator');
+
       if (dept === 'Assembly') {
         modeWrapper.classList.remove('hidden');
+        btnAddOp.classList.remove('hidden');
       } else {
         modeWrapper.classList.add('hidden');
+        btnAddOp.classList.add('hidden');
         document.getElementById('assembly_mode').value = 'Individu';
       }
       toggleOperatorMode();
@@ -391,118 +887,113 @@
 
     function toggleOperatorMode() {
       const mode = document.getElementById('assembly_mode').value;
+      const dept = document.getElementById('department').value;
       const btnAddOp = document.getElementById('btnAddOperator');
-      if (mode === 'Tim') {
+      const firstOpInput = document.getElementById('firstOpInput');
+
+      if (dept === 'Assembly' || mode === 'Tim') {
         btnAddOp.classList.remove('hidden');
       } else {
         btnAddOp.classList.add('hidden');
-        document.getElementById('operatorContainer').innerHTML = `
-          <div class="flex gap-2">
-            <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Operator Utama" required list="karyawanList">
-            <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
-              <option value="Hadir">Hadir</option>
-              <option value="Rolling/Bantuan">Rolling</option>
-              <option value="Izin/Sakit">Izin/Sakit</option>
-            </select>
-          </div>
-        `;
+      }
+
+      if (mode === 'Tim') {
+        btnAddOp.innerText = "+ Tambah Anggota Tim (Kelompok Assembly)";
+        if (firstOpInput) firstOpInput.placeholder = "Nama Operator Utama";
+      } else {
+        btnAddOp.innerText = "+ Tambah Operator Individu (Line Assembly)";
+        if (firstOpInput) firstOpInput.placeholder = "Nama Operator 1";
       }
     }
 
     function addOperatorInput() {
-      const currentOps = document.querySelectorAll('.op-nama').length;
-      if (currentOps >= 10) {
-        alert("Maksimal 10 operator dalam 1 kelompok Assembly!");
-        return;
-      }
+      const currentOps = document.querySelectorAll('.op-row').length;
+      if (currentOps >= 15) return alert("Maksimal 15 operator!");
+      
+      const mode = document.getElementById('assembly_mode').value;
+      const placeholderText = (mode === 'Tim') ? `Nama Anggota Tim ${currentOps + 1}` : `Nama Operator ${currentOps + 1}`;
+
       const div = document.createElement('div');
-      div.className = "flex gap-2 mt-2";
+      div.className = "flex gap-2 mt-2 op-row";
       div.innerHTML = `
-        <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="Nama Anggota Tim ${currentOps + 1}" required list="karyawanList">
+        <input type="text" class="op-nama w-full p-2.5 border rounded-lg bg-slate-50 text-sm" placeholder="${placeholderText}" required list="karyawanList">
         <select class="op-status p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold min-w-[110px]">
           <option value="Hadir">Hadir</option>
           <option value="Rolling/Bantuan">Rolling</option>
           <option value="Izin/Sakit">Izin/Sakit</option>
         </select>
-        <button type="button" onclick="this.parentElement.remove()" class="px-3 bg-red-100 text-red-600 rounded-lg font-bold">✕</button>
+        <button type="button" onclick="this.parentElement.remove()" class="px-3 bg-red-100 text-red-600 rounded-lg font-bold hover:bg-red-200">✕</button>
       `;
       document.getElementById('operatorContainer').appendChild(div);
     }
 
-    // ==========================================
-    // 4. GARAPAN LOGIC
-    // ==========================================
-    let garapanCounter = 0;
-
-    function addGarapanItem() {
-      if (garapanCounter >= 3) {
-        alert("Sesuai aturan shift, maksimal 3 garapan produk berbeda per shift!");
-        return;
+    function toggleIoTMode() {
+      const isChecked = document.getElementById('iotToggle').checked;
+      if (isChecked) {
+        alert("📡 IoT Telemetry Activated: Data counter & sensor downtime terhubung secara otomatis ke form.");
+        document.querySelectorAll('.garapan-card').forEach((card, i) => {
+          card.querySelector('.g-target').value = 500;
+          card.querySelector('.g-ok').value = 475;
+          card.querySelector('.g-ng').value = 10;
+          card.querySelector('.g-downtime').value = 15;
+        });
+        calculateShiftTotals();
       }
+    }
+
+    let garapanCounter = 0;
+    function addGarapanItem() {
       garapanCounter++;
       const container = document.getElementById('garapanContainer');
       const div = document.createElement('div');
-      div.className = "garapan-card p-3 border rounded-xl bg-slate-50 relative space-y-3";
+      div.className = "garapan-card p-3.5 border border-slate-200 rounded-xl bg-slate-50 space-y-3 shadow-sm";
+      
+      const downtimeOpts = DOWNTIME_CATEGORIES.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+
       div.innerHTML = `
         <div class="flex justify-between items-center border-b pb-2">
-          <span class="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-md">Garapan #${garapanCounter}</span>
-          ${garapanCounter > 1 ? `<button type="button" onclick="removeGarapan(this)" class="text-xs text-red-600 font-bold hover:underline">Hapus Garapan</button>` : ''}
+          <span class="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-200">Baris Garapan #${garapanCounter}</span>
+          ${garapanCounter > 1 ? `<button type="button" onclick="removeGarapan(this)" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-md font-bold hover:bg-red-200">Hapus Baris</button>` : ''}
         </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div class="col-span-2">
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Nama Produk / Artikel</label>
-            <input type="text" class="g-produk w-full p-2 border rounded-lg text-sm bg-white" placeholder="Contoh: Mainan Truk Plastik A-01" required list="produkList">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Mulai</label>
-            <input type="time" class="g-mulai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Selesai</label>
-            <input type="time" class="g-selesai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Target Output</label>
-            <input type="number" class="g-target w-full p-2 border rounded-lg text-sm bg-white font-semibold" placeholder="0" required oninput="calculateShiftTotals()">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil OK (Bagus)</label>
-            <input type="number" class="g-ok w-full p-2 border rounded-lg text-sm bg-green-50 text-green-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil NG (Reject)</label>
-            <input type="number" class="g-ng w-full p-2 border rounded-lg text-sm bg-red-50 text-red-700 font-bold" placeholder="0" required>
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Downtime (Menit)</label>
-            <input type="number" class="g-downtime w-full p-2 border rounded-lg text-sm bg-amber-50 text-amber-700 font-bold" placeholder="0">
-          </div>
-          <div class="col-span-2">
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Alasan Downtime (Kendala)</label>
-            <input type="text" class="g-alasan w-full p-2 border rounded-lg text-sm bg-white" placeholder="Contoh: Setting Moulding, Mati Listrik...">
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Work Order</label><input type="text" class="g-wo w-full p-2 border rounded-lg text-sm bg-white uppercase font-mono" placeholder="WO-2026-XXXX" required></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Lot Material</label><input type="text" class="g-lot w-full p-2 border rounded-lg text-sm bg-white uppercase font-mono" placeholder="LOT-88912" required></div>
+          <div class="col-span-2 md:col-span-1"><label class="block text-[11px] font-bold text-slate-600 mb-1">Nama Produk / Artikel</label><input type="text" class="g-produk w-full p-2 border rounded-lg text-sm bg-white" placeholder="Nama Produk..." required list="produkList"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Mulai</label><input type="time" class="g-mulai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Selesai</label><input type="time" class="g-selesai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Target Output</label><input type="number" class="g-target w-full p-2 border rounded-lg text-sm bg-white font-semibold" placeholder="0" required oninput="calculateShiftTotals()"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil OK</label><input type="number" class="g-ok w-full p-2 border rounded-lg text-sm bg-green-50 text-green-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil NG (Reject)</label><input type="number" class="g-ng w-full p-2 border rounded-lg text-sm bg-red-50 text-red-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()"></div>
+          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Downtime (Menit)</label><input type="number" class="g-downtime w-full p-2 border rounded-lg text-sm bg-amber-50 text-amber-700 font-bold" placeholder="0" oninput="calculateShiftTotals()"></div>
+          
+          <div class="col-span-2 md:col-span-3">
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">Kategori Alasan Downtime</label>
+            <select class="g-alasan w-full p-2 border rounded-lg text-xs bg-white font-semibold text-slate-700">
+              ${downtimeOpts}
+            </select>
           </div>
         </div>
       `;
       container.appendChild(div);
-
-      if (garapanCounter >= 3) {
-        document.getElementById('btnAddGarapan').classList.add('hidden');
-      }
+      calculateShiftTotals();
     }
 
     function removeGarapan(btn) {
       btn.closest('.garapan-card').remove();
-      garapanCounter--;
-      document.getElementById('btnAddGarapan').classList.remove('hidden');
       calculateShiftTotals();
     }
 
     function calculateShiftTotals() {
-      let totalMinutes = 0;
+      let totalMinutes = 0, totalTarget = 0, totalOK = 0, totalNG = 0, totalDowntimeMin = 0;
+      
       document.querySelectorAll('.garapan-card').forEach(card => {
         const mulai = card.querySelector('.g-mulai').value;
         const selesai = card.querySelector('.g-selesai').value;
+        const target = parseFloat(card.querySelector('.g-target').value) || 0;
+        const ok = parseFloat(card.querySelector('.g-ok').value) || 0;
+        const ng = parseFloat(card.querySelector('.g-ng').value) || 0;
+        const dt = parseFloat(card.querySelector('.g-downtime').value) || 0;
+
         if (mulai && selesai) {
           const [mH, mM] = mulai.split(':').map(Number);
           const [sH, sM] = selesai.split(':').map(Number);
@@ -510,405 +1001,922 @@
           if (diff < 0) diff += 24 * 60;
           totalMinutes += diff;
         }
+
+        totalTarget += target;
+        totalOK += ok;
+        totalNG += ng;
+        totalDowntimeMin += dt;
       });
 
       const totalHours = (totalMinutes / 60).toFixed(1);
       const timeBadge = document.getElementById('timeSummaryBadge');
       const warningBox = document.getElementById('validationWarning');
+      const warningText = document.getElementById('validationWarningText');
 
-      timeBadge.innerText = `Total: ${totalHours} Jam / 7 Jam`;
+      timeBadge.innerText = `Total Jam Garapan: ${totalHours} Jam / 8 Jam Shift`;
 
-      if (totalMinutes > 420) {
-        timeBadge.className = "text-xs font-bold px-2 py-1 rounded bg-red-100 text-red-700";
-        warningBox.innerText = `⚠️ Perhatian: Total durasi garapan (${totalHours} Jam) melebihi durasi efektif shift 7 jam!`;
+      if (totalMinutes < 420 || totalMinutes > 480) {
+        timeBadge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-300";
+        warningText.innerText = `Peringatan Shift: Akumulasi jam garapan (${totalHours} Jam) belum/melebihi jam kerja standar shift (8 Jam)! Harap periksa kembali jam garapan.`;
         warningBox.classList.remove('hidden');
       } else {
-        timeBadge.className = "text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700";
+        timeBadge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300";
         warningBox.classList.add('hidden');
       }
+
+      let availability = totalMinutes > 0 ? ((totalMinutes - totalDowntimeMin) / totalMinutes) * 100 : 0;
+      let quality = (totalOK + totalNG) > 0 ? (totalOK / (totalOK + totalNG)) * 100 : 0;
+      let performance = totalTarget > 0 ? ((totalOK + totalNG) / totalTarget) * 100 : 0;
+
+      const oeeTotal = (availability * quality * performance) / 10000;
+
+      document.getElementById('oeeAvail').innerText = `${availability.toFixed(1)}%`;
+      document.getElementById('oeePerf').innerText = `${performance.toFixed(1)}%`;
+      document.getElementById('oeeQual').innerText = `${quality.toFixed(1)}%`;
+      document.getElementById('oeeTotal').innerText = `${oeeTotal.toFixed(1)}%`;
     }
 
-    // ==========================================
-    // 5. IMPORT CSV LOGIC (KARYAWAN & TARGET)
-    // ==========================================
-    function importCsvKaryawan() {
-      const fileInput = document.getElementById('fileCsvKaryawan');
-      if (!fileInput.files.length) {
-        alert("Silakan pilih file CSV karyawan terlebih dahulu!");
-        return;
-      }
-
-      Papa.parse(fileInput.files[0], {
-        header: true,
-        skipEmptyLines: true,
-        complete: async function(results) {
-          const rows = results.data;
-          if (!rows || rows.length === 0) {
-            alert("File CSV kosong atau format tidak sesuai!");
-            return;
-          }
-
-          const client = getSupabase();
-          if (client && navigator.onLine) {
-            const { error } = await client.from('master_karyawan').upsert(rows);
-            if (error) {
-              alert("Gagal menyimpan ke Supabase: " + error.message);
-            } else {
-              alert(`Success! Berhasil mengimpor ${rows.length} data karyawan ke Supabase.`);
-              loadKaryawanData();
-            }
-          } else {
-            localStorage.setItem('master_karyawan_local', JSON.stringify(rows));
-            alert(`Berhasil menyimpan ${rows.length} data karyawan di browser (Offline Mode).`);
-            loadKaryawanData();
-          }
-        }
-      });
-    }
-
-    function importCsvTarget() {
-      const fileInput = document.getElementById('fileCsvTarget');
-      if (!fileInput.files.length) {
-        alert("Silakan pilih file CSV target produk terlebih dahulu!");
-        return;
-      }
-
-      Papa.parse(fileInput.files[0], {
-        header: true,
-        skipEmptyLines: true,
-        complete: async function(results) {
-          const rows = results.data;
-          if (!rows || rows.length === 0) {
-            alert("File CSV kosong atau format tidak sesuai!");
-            return;
-          }
-
-          const client = getSupabase();
-          if (client && navigator.onLine) {
-            const { error } = await client.from('master_target').upsert(rows);
-            if (error) {
-              alert("Gagal menyimpan ke Supabase: " + error.message);
-            } else {
-              alert(`Success! Berhasil mengimpor ${rows.length} target produk ke Supabase.`);
-              loadTargetData();
-            }
-          } else {
-            localStorage.setItem('master_target_local', JSON.stringify(rows));
-            alert(`Berhasil menyimpan ${rows.length} target produk di browser (Offline Mode).`);
-            loadTargetData();
-          }
-        }
-      });
-    }
-
-    // ==========================================
-    // 6. FETCH & RENDER MASTER DATA
-    // ==========================================
-    async function loadKaryawanData() {
-      const tbody = document.getElementById('tableBodyKaryawan');
-      tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Memuat data karyawan...</td></tr>';
-
-      let data = [];
-      const client = getSupabase();
-
-      if (navigator.onLine && client) {
-        const res = await client.from('master_karyawan').select('*').order('nama', {ascending: true});
-        if (!res.error && res.data) data = res.data;
-      }
-
-      if (data.length === 0) {
-        data = JSON.parse(localStorage.getItem('master_karyawan_local') || '[]');
-      }
-
-      // Populate Datalist Autocomplete
-      const datalist = document.getElementById('karyawanList');
-      datalist.innerHTML = '';
-      
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada data karyawan terdaftar. Upload CSV di atas.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = '';
-      data.forEach(item => {
-        datalist.innerHTML += `<option value="${item.nama}">`;
-        tbody.innerHTML += `
-          <tr class="border-b hover:bg-slate-50">
-            <td class="p-2 font-mono font-bold text-slate-600">${item.nik || '-'}</td>
-            <td class="p-2 font-bold text-blue-700">${item.nama}</td>
-            <td class="p-2">${item.department || '-'}</td>
-            <td class="p-2">${item.jabatan || 'Operator'}</td>
-          </tr>
-        `;
-      });
-    }
-
-    async function loadTargetData() {
-      const tbody = document.getElementById('tableBodyTarget');
-      tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Memuat target produk...</td></tr>';
-
-      let data = [];
-      const client = getSupabase();
-
-      if (navigator.onLine && client) {
-        const res = await client.from('master_target').select('*').order('department', {ascending: true});
-        if (!res.error && res.data) data = res.data;
-      }
-
-      if (data.length === 0) {
-        data = JSON.parse(localStorage.getItem('master_target_local') || '[]');
-      }
-
-      const datalist = document.getElementById('produkList');
-      datalist.innerHTML = '';
-
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada data target terdaftar. Upload CSV di atas.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = '';
-      data.forEach(item => {
-        datalist.innerHTML += `<option value="${item.nama_produk}">`;
-        tbody.innerHTML += `
-          <tr class="border-b hover:bg-slate-50">
-            <td class="p-2 font-bold text-blue-600">${item.department}</td>
-            <td class="p-2 font-bold text-slate-800">${item.nama_produk}</td>
-            <td class="p-2 font-semibold">${item.target_per_jam} pcs/jam</td>
-            <td class="p-2 font-black text-green-600">${item.target_per_shift || (item.target_per_jam * 7)} pcs/shift</td>
-          </tr>
-        `;
-      });
-    }
-
-    function renderMasterView() {
-      const container = document.getElementById('masterUnitDetails');
-      container.innerHTML = '';
-
-      Object.keys(MASTER_UNITS).forEach(dept => {
-        const units = MASTER_UNITS[dept];
-        container.innerHTML += `
-          <div class="border rounded-xl p-3 bg-slate-50">
-            <h3 class="font-bold text-slate-700 text-xs mb-2 flex justify-between">
-              <span>${dept}</span>
-              <span class="text-blue-600">${units.length} Unit</span>
-            </h3>
-            <div class="flex flex-wrap gap-1.5">
-              ${units.map(u => `<span class="text-[10px] font-semibold bg-white border px-2 py-0.5 rounded text-slate-600">${u}</span>`).join('')}
-            </div>
-          </div>
-        `;
-      });
-    }
-
-    // ==========================================
-    // 7. SUBMIT FORM & DASHBOARD
-    // ==========================================
-    async function submitForm(statusMode) {
-      const form = document.getElementById('shiftForm');
-      if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-      }
-
+    async function submitForm(status) {
       const statusMsg = document.getElementById('statusMessage');
-      statusMsg.innerText = "⏳ Memproses penyimpanan...";
-      statusMsg.className = "text-center font-bold text-sm text-blue-600 block";
 
-      const operatorsData = [];
-      document.querySelectorAll('#operatorContainer > div').forEach(el => {
-        operatorsData.push({
-          nama: el.querySelector('.op-nama').value,
-          status: el.querySelector('.op-status').value
-        });
+      // VALIDASI DASAR SISI KLIEN sebelum kirim (mencegah data kosong/tidak lengkap).
+      // Catatan: ini TIDAK menggantikan validasi di sisi server/Supabase (RLS/constraint),
+      // hanya membantu kualitas data & pengalaman pengguna.
+      const tanggal = document.getElementById('tanggal').value;
+      const koordinator = document.getElementById('koordinator').value.trim();
+      const mesin = document.getElementById('mesin').value;
+      if (!tanggal || !koordinator || !mesin) {
+        statusMsg.classList.remove('hidden');
+        statusMsg.className = "text-center font-bold text-sm bg-red-100 text-red-800 p-2 rounded-lg";
+        statusMsg.innerText = "⚠️ Tanggal, Koordinator, dan Mesin/Line wajib diisi.";
+        return;
+      }
+
+      const operators = [];
+      document.querySelectorAll('.op-row').forEach(row => {
+        const nama = row.querySelector('.op-nama').value.trim();
+        const opStatus = row.querySelector('.op-status').value;
+        if (nama) operators.push({ nama, status: opStatus });
       });
 
-      const garapanData = [];
+      if (operators.length === 0) {
+        statusMsg.classList.remove('hidden');
+        statusMsg.className = "text-center font-bold text-sm bg-red-100 text-red-800 p-2 rounded-lg";
+        statusMsg.innerText = "⚠️ Minimal 1 operator wajib diisi.";
+        return;
+      }
+
+      const garapan = [];
+      let garapanIncomplete = false;
       document.querySelectorAll('.garapan-card').forEach(card => {
-        const mulai = card.querySelector('.g-mulai').value;
-        const selesai = card.querySelector('.g-selesai').value;
-        let diff = 0;
-        if (mulai && selesai) {
-          const [mH, mM] = mulai.split(':').map(Number);
-          const [sH, sM] = selesai.split(':').map(Number);
-          diff = (sH * 60 + sM) - (mH * 60 + mM);
-          if (diff < 0) diff += 24 * 60;
-        }
-
-        garapanData.push({
-          produk: card.querySelector('.g-produk').value,
-          mulai: mulai,
-          selesai: selesai,
-          durasi_menit: diff,
-          target: parseInt(card.querySelector('.g-target').value) || 0,
-          ok: parseInt(card.querySelector('.g-ok').value) || 0,
-          ng: parseInt(card.querySelector('.g-ng').value) || 0,
-          downtime: parseInt(card.querySelector('.g-downtime').value) || 0,
-          alasan: card.querySelector('.g-alasan').value || ''
+        const wo = card.querySelector('.g-wo').value.trim();
+        const produk = card.querySelector('.g-produk').value.trim();
+        if (!wo || !produk) garapanIncomplete = true;
+        garapan.push({
+          work_order: wo,
+          lot_number: card.querySelector('.g-lot').value.trim(),
+          produk: produk,
+          jam_mulai: card.querySelector('.g-mulai').value,
+          jam_selesai: card.querySelector('.g-selesai').value,
+          target: parseFloat(card.querySelector('.g-target').value) || 0,
+          hasil_ok: parseFloat(card.querySelector('.g-ok').value) || 0,
+          hasil_ng: parseFloat(card.querySelector('.g-ng').value) || 0,
+          downtime_menit: parseFloat(card.querySelector('.g-downtime').value) || 0,
+          alasan_downtime: card.querySelector('.g-alasan').value
         });
       });
+
+      if (garapan.length === 0 || garapanIncomplete) {
+        statusMsg.classList.remove('hidden');
+        statusMsg.className = "text-center font-bold text-sm bg-red-100 text-red-800 p-2 rounded-lg";
+        statusMsg.innerText = "⚠️ Setiap baris garapan wajib memiliki No. Work Order dan Nama Produk.";
+        return;
+      }
 
       const payload = {
-        id: "RPT-" + Date.now(),
-        tanggal: document.getElementById('tanggal').value,
-        shift: parseInt(document.getElementById('shift').value),
+        tanggal: tanggal,
+        shift: document.getElementById('shift').value,
+        koordinator: koordinator,
         department: document.getElementById('department').value,
-        mesin: document.getElementById('mesin').value,
-        koordinator: document.getElementById('koordinator').value,
-        assembly_mode: document.getElementById('assembly_mode').value || 'Individu',
-        operators: operatorsData,
-        garapan: garapanData,
-        status: statusMode,
+        mesin: mesin,
+        assembly_mode: document.getElementById('assembly_mode').value,
+        operators: operators,
+        garapan: garapan,
+        oee_score: parseFloat(document.getElementById('oeeTotal').innerText) || 0,
+        status: status,
+        created_by: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : null,
         created_at: new Date().toISOString()
       };
 
-      const client = getSupabase();
-      if (!navigator.onLine || !client) {
-        saveToLocalStorage(payload);
-        statusMsg.innerText = "✅ Tersimpan di HP (Mode Offline). Akan otomatis tersinkron saat online.";
-        statusMsg.className = "text-center font-bold text-sm text-amber-600 block";
-        resetForm();
-        updatePendingBadge();
+      statusMsg.classList.remove('hidden');
+
+      if (navigator.onLine && getSupabase()) {
+        const { error } = await getSupabase().from('laporan_shift').insert([payload]);
+        if (error) {
+          await SyncManager.addQueue(payload);
+          statusMsg.className = "text-center font-bold text-sm bg-amber-100 text-amber-800 p-2 rounded-lg";
+          statusMsg.innerText = "⚠️ Gagal koneksi ke server. Tersimpan otomatis di Antrean Offline (IndexedDB) dan akan disinkronkan ulang.";
+        } else {
+          statusMsg.className = "text-center font-bold text-sm bg-emerald-100 text-emerald-800 p-2 rounded-lg";
+          statusMsg.innerText = "🚀 Laporan Shift Berhasil Terkirim & Terintegrasi!";
+        }
+      } else {
+        await SyncManager.addQueue(payload);
+        statusMsg.className = "text-center font-bold text-sm bg-amber-100 text-amber-800 p-2 rounded-lg";
+        statusMsg.innerText = "📦 Offline Mode: Tersimpan aman di Antrean Offline Browser (IndexedDB).";
+      }
+    }
+
+    // Dashboard Analytics (Dengan Fitur Filter Interaktif)
+    let chartParetoInstance = null;
+    let chartComponentsInstance = null;
+    let chartTrendInstance = null;
+
+    function resetDashFilters() {
+      document.getElementById('dashStartDate').value = '';
+      document.getElementById('dashEndDate').value = '';
+      document.getElementById('dashFilterShift').value = '';
+      document.getElementById('dashFilterDept').value = '';
+      document.getElementById('dashFilterMesin').value = '';
+      updateDashMesinOptions();
+      renderDashboardAnalytics();
+    }
+
+    async function renderDashboardAnalytics() {
+      let rawData = [];
+      if (navigator.onLine && getSupabase()) {
+        // Dibatasi 1000 baris terbaru agar tidak menarik seluruh histori setiap
+        // kali filter berubah. Untuk analisis jangka panjang, pertimbangkan agregasi di sisi server (RPC/view).
+        const { data } = await getSupabase()
+          .from('laporan_shift')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1000);
+        if (data) rawData = data;
+      }
+
+      // Ambil nilai Filter Dashboard
+      const startDate = document.getElementById('dashStartDate').value;
+      const endDate = document.getElementById('dashEndDate').value;
+      const shiftFilter = document.getElementById('dashFilterShift').value;
+      const deptFilter = document.getElementById('dashFilterDept').value;
+      const mesinFilter = document.getElementById('dashFilterMesin').value;
+
+      // Filter Data secara Dinamis
+      const filteredData = rawData.filter(row => {
+        let match = true;
+        if (startDate && row.tanggal < startDate) match = false;
+        if (endDate && row.tanggal > endDate) match = false;
+        if (shiftFilter && String(row.shift) !== String(shiftFilter)) match = false;
+        if (deptFilter && row.department !== deptFilter) match = false;
+        if (mesinFilter && row.mesin !== mesinFilter) match = false;
+        return match;
+      });
+
+      let totalOee = 0, totalOk = 0, totalNg = 0, totalDt = 0;
+      let sumAvail = 0, sumPerf = 0, sumQual = 0;
+      const downtimeReasonsMap = {};
+      const dateOeeMap = {};
+
+      filteredData.forEach(row => {
+        totalOee += row.oee_score || 0;
+        
+        // Perhitungan Garapan
+        let rowOk = 0, rowNg = 0, rowDt = 0, rowTarget = 0;
+        (row.garapan || []).forEach(g => {
+          rowOk += g.hasil_ok || 0;
+          rowNg += g.hasil_ng || 0;
+          rowDt += g.downtime_menit || 0;
+          rowTarget += g.target || 0;
+
+          const reason = g.alasan_downtime || 'Uncategorized';
+          if (reason !== "Tidak Ada Downtime") {
+            downtimeReasonsMap[reason] = (downtimeReasonsMap[reason] || 0) + (g.downtime_menit || 0);
+          }
+        });
+
+        totalOk += rowOk;
+        totalNg += rowNg;
+        totalDt += rowDt;
+
+        // Hitung estimasi Komponen OEE sederhana per Laporan
+        let avail = 100 - Math.min(100, (rowDt / 480) * 100);
+        let perf = rowTarget > 0 ? Math.min(100, ((rowOk + rowNg) / rowTarget) * 100) : 0;
+        let qual = (rowOk + rowNg) > 0 ? (rowOk / (rowOk + rowNg)) * 100 : 0;
+
+        sumAvail += avail;
+        sumPerf += perf;
+        sumQual += qual;
+
+        // Daily Trend Data
+        const dateKey = row.tanggal || 'N/A';
+        if (!dateOeeMap[dateKey]) dateOeeMap[dateKey] = [];
+        dateOeeMap[dateKey].push(row.oee_score || 0);
+      });
+
+      const count = filteredData.length || 1;
+      const avgOEE = (totalOee / count).toFixed(1);
+      const avgAvail = (sumAvail / count).toFixed(1);
+      const avgPerf = (sumPerf / count).toFixed(1);
+      const avgQual = (sumQual / count).toFixed(1);
+
+      document.getElementById('dashOeeAvg').innerText = `${filteredData.length ? avgOEE : 0}%`;
+      document.getElementById('dashTotalOk').innerText = `${totalOk.toLocaleString()} Pcs`;
+      document.getElementById('dashTotalNg').innerText = `${totalNg.toLocaleString()} Pcs`;
+      document.getElementById('dashTotalDt').innerText = `${totalDt} Mins`;
+
+      // 1. Chart Pareto Downtime
+      const ctxPareto = document.getElementById('chartParetoDowntime').getContext('2d');
+      if (chartParetoInstance) chartParetoInstance.destroy();
+
+      const paretoLabels = Object.keys(downtimeReasonsMap);
+      chartParetoInstance = new Chart(ctxPareto, {
+        type: 'bar',
+        data: {
+          labels: paretoLabels.length ? paretoLabels : ['Kerusakan Mesin', 'Set-up Mold', 'Bahan Habis'],
+          datasets: [{
+            label: 'Total Downtime (Menit)',
+            data: paretoLabels.length ? paretoLabels.map(k => downtimeReasonsMap[k]) : [0, 0, 0],
+            backgroundColor: '#ef4444'
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // 2. Chart OEE Breakdown Components
+      const ctxComp = document.getElementById('chartOeeComponents').getContext('2d');
+      if (chartComponentsInstance) chartComponentsInstance.destroy();
+
+      chartComponentsInstance = new Chart(ctxComp, {
+        type: 'doughnut',
+        data: {
+          labels: ['Availability', 'Performance', 'Quality'],
+          datasets: [{
+            data: filteredData.length ? [avgAvail, avgPerf, avgQual] : [0, 0, 0],
+            backgroundColor: ['#3b82f6', '#f59e0b', '#10b981']
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // 3. Chart OEE Score Trend
+      const ctxTrend = document.getElementById('chartOeeTrend').getContext('2d');
+      if (chartTrendInstance) chartTrendInstance.destroy();
+
+      const trendLabels = Object.keys(dateOeeMap).sort();
+      const trendValues = trendLabels.map(d => {
+        const arr = dateOeeMap[d];
+        return (arr.reduce((a,b) => a+b, 0) / arr.length).toFixed(1);
+      });
+
+      chartTrendInstance = new Chart(ctxTrend, {
+        type: 'line',
+        data: {
+          labels: trendLabels.length ? trendLabels : ['Belum Ada Data'],
+          datasets: [{
+            label: 'OEE Score (%)',
+            data: trendLabels.length ? trendValues : [0],
+            borderColor: '#6366f1',
+            tension: 0.3,
+            fill: false
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+    }
+
+    // Filter Approval Tingkat Lanjut
+    let allApprovalData = [];
+    let filteredApprovalData = [];
+    let currentPage = 1;
+    const itemsPerPage = 5;
+
+    async function loadApprovalData() {
+      if (navigator.onLine && getSupabase()) {
+        // Dibatasi 500 baris terbaru supaya tidak menarik seluruh tabel sekaligus
+        // ke browser (penting saat data sudah besar). Untuk histori lebih lama,
+        // sebaiknya tambahkan filter tanggal lalu query ulang ke server.
+        const { data } = await getSupabase()
+          .from('laporan_shift')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (data) allApprovalData = data;
+      }
+      applyApprovalFilter();
+    }
+
+    function applyApprovalFilter() {
+      const search = document.getElementById('appSearch').value.toLowerCase();
+      const startDate = document.getElementById('appStartDate').value;
+      const endDate = document.getElementById('appEndDate').value;
+      const koordinator = document.getElementById('appFilterKoordinator').value.toLowerCase();
+      const dept = document.getElementById('appFilterDept').value;
+      const oeeCategory = document.getElementById('appFilterOeeCategory').value;
+
+      filteredApprovalData = allApprovalData.filter(item => {
+        const matchSearch = (item.koordinator || '').toLowerCase().includes(search) || 
+                            (item.mesin || '').toLowerCase().includes(search) ||
+                            (item.shift || '').toString().includes(search);
+        const matchDept = !dept || item.department === dept;
+        const matchKoor = !koordinator || (item.koordinator || '').toLowerCase().includes(koordinator);
+        
+        let matchDate = true;
+        if (startDate && item.tanggal < startDate) matchDate = false;
+        if (endDate && item.tanggal > endDate) matchDate = false;
+
+        let matchOeeCat = true;
+        const score = item.oee_score || 0;
+        if (oeeCategory === 'World Class' && score < 85) matchOeeCat = false;
+        if (oeeCategory === 'Good' && (score < 70 || score >= 85)) matchOeeCat = false;
+        if (oeeCategory === 'Needs Improvement' && score >= 70) matchOeeCat = false;
+
+        return matchSearch && matchDept && matchKoor && matchDate && matchOeeCat;
+      });
+
+      currentPage = 1;
+      renderApprovalTable();
+    }
+
+    function renderApprovalTable() {
+      const tbody = document.getElementById('tableBodyApproval');
+      tbody.innerHTML = '';
+
+      const totalPages = Math.ceil(filteredApprovalData.length / itemsPerPage) || 1;
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageData = filteredApprovalData.slice(start, end);
+
+      if (pageData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Tidak ada data sesuai filter.</td></tr>';
+      } else {
+        pageData.forEach(row => {
+          // Jumlahkan SEMUA baris garapan (bukan hanya produk pertama)
+          // supaya laporan multi-produk tampil lengkap.
+          const agg = aggregateGarapan(row);
+          const isApproved = row.status === 'Approved';
+          tbody.innerHTML += `
+            <tr class="border-b hover:bg-slate-50">
+              <td class="p-2.5 font-semibold">${escapeHtml(row.tanggal)} (Shift ${escapeHtml(row.shift)})</td>
+              <td class="p-2.5">${escapeHtml(row.department)} / ${escapeHtml(row.mesin)}</td>
+              <td class="p-2.5 font-bold text-slate-700">${escapeHtml(row.koordinator)}</td>
+              <td class="p-2.5 font-mono" title="${agg.produkCount} produk">${agg.ok} / ${agg.target}${agg.produkCount > 1 ? ` <span class="text-slate-400">(${agg.produkCount} produk)</span>` : ''}</td>
+              <td class="p-2.5 font-black text-amber-600">${escapeHtml(row.oee_score || 0)}%</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">${escapeHtml(row.status)}</span></td>
+              <td class="p-2.5 text-center">
+                ${isApproved
+                  ? `<span class="text-emerald-600 font-bold text-[10px]">✓ Disetujui${row.approved_by ? ' oleh ' + escapeHtml(row.approved_by) : ''}</span>`
+                  : `<button data-action="approve-shift" data-id="${escapeHtml(row.id)}" class="bg-emerald-600 text-white px-2.5 py-1 rounded font-bold text-[10px] hover:bg-emerald-700">Approve</button>`}
+              </td>
+            </tr>
+          `;
+        });
+      }
+
+      document.getElementById('pageInfo').innerText = `Halaman ${currentPage} dari ${totalPages} (Total: ${filteredApprovalData.length} Data)`;
+      document.getElementById('btnPrevPage').disabled = currentPage === 1;
+      document.getElementById('btnNextPage').disabled = currentPage === totalPages;
+    }
+
+    function changePage(direction) {
+      currentPage += direction;
+      renderApprovalTable();
+    }
+
+    document.getElementById('tableBodyApproval').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action="approve-shift"]');
+      if (btn) approveShift(btn.dataset.id);
+    });
+
+    async function approveShift(id) {
+      if (!navigator.onLine || !getSupabase()) {
+        alert('Perlu koneksi internet untuk melakukan approval.');
         return;
       }
-
-      try {
-        const { error } = await client.from('shift_reports').insert([payload]);
-        if (error) throw error;
-
-        statusMsg.innerText = `✅ Laporan Berhasil Dikirim (${statusMode})!`;
-        statusMsg.className = "text-center font-bold text-sm text-green-600 block";
-        resetForm();
-      } catch (err) {
-        saveToLocalStorage(payload);
-        statusMsg.innerText = "⚠️ Disimpan sementara di HP (Pending Sync).";
-        statusMsg.className = "text-center font-bold text-sm text-amber-600 block";
-        resetForm();
-        updatePendingBadge();
-      }
-    }
-
-    function saveToLocalStorage(payload) {
-      let pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
-      pending.push(payload);
-      localStorage.setItem('pending_shift_reports', JSON.stringify(pending));
-    }
-
-    function updatePendingBadge() {
-      let pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
-      const badge = document.getElementById('pendingSyncBadge');
-      badge.innerText = `${pending.length} Pending Offline`;
-      if (pending.length > 0) {
-        badge.className = "text-xs font-bold bg-amber-500 text-white px-3 py-1 rounded-full animate-pulse";
+      if (!confirm('Setujui laporan shift ini?')) return;
+      // Catat siapa yang approve & kapan (audit trail), bukan hanya ubah status.
+      const approverEmail = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : 'unknown';
+      const { error } = await getSupabase().from('laporan_shift').update({
+        status: 'Approved',
+        approved_by: approverEmail,
+        approved_at: new Date().toISOString()
+      }).eq('id', id);
+      if (error) {
+        alert('❌ Gagal menyetujui laporan: ' + error.message);
       } else {
-        badge.className = "text-xs font-bold bg-blue-800 px-3 py-1 rounded-full border border-blue-500";
+        alert('✅ Laporan disetujui!');
+        loadApprovalData();
       }
     }
 
-    function resetForm() {
-      document.getElementById('garapanContainer').innerHTML = '';
-      garapanCounter = 0;
-      addGarapanItem();
-      checkAssemblyMode();
-      calculateShiftTotals();
+    // Ekspor Laporan Excel & PDF Engine
+    function exportToExcel() {
+      if (filteredApprovalData.length === 0) return alert("Tidak ada data untuk diekspor!");
+      
+      // Setiap baris garapan diekspor sebagai baris terpisah supaya laporan
+      // multi-produk tidak kehilangan data (sebelumnya hanya produk pertama yang terekspor).
+      const exportRows = [];
+      filteredApprovalData.forEach(r => {
+        const garapanList = Array.isArray(r.garapan) && r.garapan.length > 0 ? r.garapan : [{}];
+        garapanList.forEach(g => {
+          exportRows.push({
+            Tanggal: r.tanggal,
+            Shift: r.shift,
+            Department: r.department,
+            Mesin: r.mesin,
+            Koordinator: r.koordinator,
+            Produk: g.produk || '-',
+            Work_Order: g.work_order || '-',
+            Target: g.target || 0,
+            Hasil_OK: g.hasil_ok || 0,
+            Hasil_NG: g.hasil_ng || 0,
+            Downtime_Menit: g.downtime_menit || 0,
+            Alasan_Downtime: g.alasan_downtime || '-',
+            OEE_Score: `${r.oee_score || 0}%`,
+            Status: r.status
+          });
+        });
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan MES Shift");
+      XLSX.writeFile(workbook, `MES_Laporan_Shift_${new Date().toISOString().split('T')[0]}.xlsx`);
     }
 
-    async function loadDashboardData() {
-      const tbody = document.getElementById('tableBodyDashboard');
-      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Memuat data...</td></tr>';
+    function exportToPDF() {
+      if (filteredApprovalData.length === 0) return alert("Tidak ada data untuk diekspor!");
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
 
-      let records = [];
-      const client = getSupabase();
+      doc.text("Enterprise MES - Ringkasan Laporan Shift", 14, 15);
 
-      if (navigator.onLine && client) {
-        try {
-          const { data, error } = await client
-            .from('shift_reports')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(20);
-          if (!error && data) records = data;
-        } catch (e) { console.error(e); }
+      // Total Hasil OK dijumlahkan dari SEMUA baris garapan, bukan hanya produk pertama.
+      const tableData = filteredApprovalData.map(r => {
+        const agg = aggregateGarapan(r);
+        return [
+          r.tanggal,
+          `Shift ${r.shift}`,
+          r.department,
+          r.mesin,
+          r.koordinator,
+          `${agg.ok} / ${agg.target} Pcs${agg.produkCount > 1 ? ` (${agg.produkCount} produk)` : ''}`,
+          `${r.oee_score || 0}%`,
+          r.status
+        ];
+      });
+
+      doc.autoTable({
+        head: [['Tanggal', 'Shift', 'Dept', 'Mesin', 'Koordinator', 'Hasil OK/Target', 'OEE', 'Status']],
+        body: tableData,
+        startY: 20
+      });
+
+      doc.save(`MES_Laporan_Shift_${new Date().toISOString().split('T')[0]}.pdf`);
+    }
+
+    // MASTER DATA IMPORT & CRUD ENGINE
+    function importCSV(type, inputElement) {
+      const file = inputElement.files[0];
+      if (!file) return;
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async function(results) {
+          const parsedData = results.data;
+          if (!parsedData || parsedData.length === 0) return alert("File CSV kosong!");
+
+          if (type === 'karyawan') {
+            const formatted = parsedData.map(r => ({
+              nik: r.nik || r.NIK || 'NIK-' + Math.floor(Math.random() * 100000),
+              nama: r.nama || r.Nama || r.NAMA || '',
+              department: r.department || r.Department || 'Blowing',
+              jabatan: r.jabatan || r.Jabatan || 'Operator'
+            })).filter(item => item.nama !== '');
+
+            if (navigator.onLine && getSupabase()) {
+              await getSupabase().from('master_karyawan').upsert(formatted);
+            }
+            loadKaryawanData();
+
+          } else if (type === 'target') {
+            const formatted = parsedData.map(r => ({
+              department: r.department || r.Department || 'Blowing',
+              nama_produk: r.nama_produk || r.produk || r.Produk || '',
+              target_shift: parseFloat(r.target_shift || r.target || r.Target) || 0
+            })).filter(item => item.nama_produk !== '');
+
+            if (navigator.onLine && getSupabase()) {
+              await getSupabase().from('master_target').upsert(formatted);
+            }
+            loadTargetData();
+
+          } else if (type === 'mesin') {
+            const rowsToInsert = [];
+            parsedData.forEach(r => {
+              const dept = r.department || r.Department || 'Blowing';
+              const namaMesin = (r.nama_mesin || r.mesin || r.Unit || '').trim();
+              if (dept && namaMesin) {
+                if (!MASTER_UNITS[dept]) MASTER_UNITS[dept] = [];
+                if (!MASTER_UNITS[dept].includes(namaMesin)) {
+                  MASTER_UNITS[dept].push(namaMesin);
+                  rowsToInsert.push({ department: dept, nama_mesin: namaMesin });
+                }
+              }
+            });
+
+            if (navigator.onLine && getSupabase() && rowsToInsert.length > 0) {
+              const { error } = await getSupabase().from('master_mesin').insert(rowsToInsert);
+              if (error) {
+                masterMesinTableAvailable = false;
+                alert("⚠️ Data mesin di-import hanya sementara di browser. Tabel 'master_mesin' belum tersedia/gagal diakses di Supabase.");
+              } else {
+                alert("✅ Konfigurasi Unit/Mesin Berhasil Diperbarui & Disimpan ke Server!");
+              }
+            } else {
+              alert("✅ Konfigurasi Unit/Mesin Berhasil Diperbarui (lokal, belum tersinkron ke server).");
+            }
+            updateMesinOptions();
+            renderMasterView();
+          }
+
+          inputElement.value = '';
+        }
+      });
+    }
+
+    function openModalKaryawan(id = null) {
+      document.getElementById('modalKaryawan').classList.remove('hidden');
+      document.getElementById('m_karyawan_id').value = id || '';
+      if (!id) {
+        document.getElementById('m_nik').value = '';
+        document.getElementById('m_nama').value = '';
+      }
+    }
+    function closeModalKaryawan() { document.getElementById('modalKaryawan').classList.add('hidden'); }
+
+    async function saveKaryawanManual() {
+      const item = {
+        nik: document.getElementById('m_nik').value || 'NIK-' + Date.now(),
+        nama: document.getElementById('m_nama').value,
+        department: document.getElementById('m_dept').value,
+        jabatan: document.getElementById('m_jabatan').value
+      };
+
+      if (!item.nama) return alert('Nama Karyawan wajib diisi!');
+      if (navigator.onLine && getSupabase()) {
+        await getSupabase().from('master_karyawan').upsert([item]);
+      }
+      closeModalKaryawan();
+      loadKaryawanData();
+    }
+
+    async function loadKaryawanData() {
+      const tbody = document.getElementById('tableBodyKaryawan');
+      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Memuat data...</td></tr>';
+      let data = [];
+
+      if (navigator.onLine && getSupabase()) {
+        const res = await getSupabase().from('master_karyawan').select('*').order('nama', {ascending: true});
+        if (!res.error && res.data) data = res.data;
       }
 
-      const pending = JSON.parse(localStorage.getItem('pending_shift_reports') || '[]');
-      records = [...pending, ...records];
+      allKaryawanCache = data;
+      updateOperatorDropdown();
 
-      if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada laporan shift tersimpan.</td></tr>';
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Belum ada data karyawan. Gunakan fitur Tambah / Import CSV.</td></tr>';
         return;
       }
 
       tbody.innerHTML = '';
-      records.forEach(row => {
-        let totalOK = 0;
-        let totalTarget = 0;
-        if (Array.isArray(row.garapan)) {
-          row.garapan.forEach(g => {
-            totalOK += parseInt(g.ok) || 0;
-            totalTarget += parseInt(g.target) || 0;
-          });
-        }
-
-        const eff = totalTarget > 0 ? ((totalOK / totalTarget) * 100).toFixed(1) : 0;
-        let statusBadge = row.status === 'Approved' 
-          ? `<span class="bg-green-100 text-green-700 px-2 py-1 rounded font-bold">Approved</span>`
-          : row.status === 'Draft'
-          ? `<span class="bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold">Draft</span>`
-          : `<span class="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold">Submitted</span>`;
-
+      data.forEach(item => {
         tbody.innerHTML += `
           <tr class="border-b hover:bg-slate-50">
-            <td class="p-2.5 font-semibold">${row.tanggal}<br><span class="text-[10px] text-blue-600 font-bold">Shift ${row.shift}</span></td>
-            <td class="p-2.5 font-bold">${row.department}<br><span class="text-[10px] font-normal text-slate-500">${row.mesin}</span></td>
-            <td class="p-2.5">${row.koordinator}</td>
-            <td class="p-2.5 font-bold"><span class="text-green-600">${totalOK}</span> / ${totalTarget}</td>
-            <td class="p-2.5 font-black ${eff >= 85 ? 'text-green-600' : 'text-amber-600'}">${eff}%</td>
-            <td class="p-2.5">${statusBadge}</td>
-            <td class="p-2.5">
-              ${row.status === 'Submitted' 
-                ? `<button onclick="approveReport('${row.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded text-[11px]">Approve</button>`
-                : `<span class="text-slate-400 font-semibold text-[10px]">-</span>`}
+            <td class="p-2 font-mono font-bold text-slate-600">${escapeHtml(item.nik || '-')}</td>
+            <td class="p-2 font-bold text-blue-700">${escapeHtml(item.nama)}</td>
+            <td class="p-2">${escapeHtml(item.department || '-')}</td>
+            <td class="p-2">${escapeHtml(item.jabatan || 'Operator')}</td>
+            <td class="p-2 text-center flex justify-center gap-2">
+              <button data-action="edit-karyawan" data-nik="${escapeHtml(item.nik)}" data-nama="${escapeHtml(item.nama)}" data-dept="${escapeHtml(item.department)}" data-jabatan="${escapeHtml(item.jabatan)}" class="text-blue-600 font-bold hover:underline">Edit</button>
+              <button data-action="delete-karyawan" data-nik="${escapeHtml(item.nik)}" class="text-red-600 font-bold hover:underline">Hapus</button>
             </td>
           </tr>
         `;
       });
     }
 
-    async function approveReport(id) {
-      const client = getSupabase();
-      if (!client) {
-        alert("Koneksi Supabase belum siap.");
+    // Event delegation untuk tombol Edit/Hapus Karyawan (menghindari injeksi via onclick string)
+    document.getElementById('tableBodyKaryawan').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      if (btn.dataset.action === 'edit-karyawan') {
+        editKaryawan(btn.dataset.nik, btn.dataset.nama, btn.dataset.dept, btn.dataset.jabatan);
+      } else if (btn.dataset.action === 'delete-karyawan') {
+        deleteKaryawan(btn.dataset.nik);
+      }
+    });
+
+    function editKaryawan(nik, nama, dept, jabatan) {
+      openModalKaryawan(nik);
+      document.getElementById('m_nik').value = nik;
+      document.getElementById('m_nama').value = nama;
+      document.getElementById('m_dept').value = dept;
+      document.getElementById('m_jabatan').value = jabatan;
+    }
+
+    async function deleteKaryawan(nik) {
+      if (!confirm('Hapus karyawan ini?')) return;
+      if (navigator.onLine && getSupabase()) {
+        await getSupabase().from('master_karyawan').delete().eq('nik', nik);
+      }
+      loadKaryawanData();
+    }
+
+    function openModalTarget() { document.getElementById('modalTarget').classList.remove('hidden'); }
+    function closeModalTarget() { document.getElementById('modalTarget').classList.add('hidden'); }
+
+    async function saveTargetManual() {
+      const item = {
+        department: document.getElementById('mt_dept').value,
+        nama_produk: document.getElementById('mt_produk').value,
+        target_shift: parseFloat(document.getElementById('mt_target').value) || 0
+      };
+      if (navigator.onLine && getSupabase()) {
+        await getSupabase().from('master_target').upsert([item]);
+      }
+      closeModalTarget();
+      loadTargetData();
+    }
+
+    async function loadTargetData() {
+      const tbody = document.getElementById('tableBodyTarget');
+      tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Memuat target...</td></tr>';
+      let data = [];
+      if (navigator.onLine && getSupabase()) {
+        const res = await getSupabase().from('master_target').select('*');
+        if (res.data) data = res.data;
+      }
+
+      const prodDatalist = document.getElementById('produkList');
+      prodDatalist.innerHTML = '';
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada target terdaftar. Gunakan fitur Tambah / Import CSV.</td></tr>';
         return;
       }
-      if (confirm("Konfirmasi persetujuan (Approve) laporan shift ini?")) {
-        try {
-          const { error } = await client.from('shift_reports').update({ status: 'Approved' }).eq('id', id);
-          if (error) throw error;
-          alert("Laporan berhasil di-Approve!");
-          loadDashboardData();
-        } catch (e) {
-          alert("Gagal melakukan Approval: " + e.message);
+      tbody.innerHTML = '';
+      data.forEach(item => {
+        prodDatalist.innerHTML += `<option value="${escapeHtml(item.nama_produk)}">`;
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-slate-50">
+            <td class="p-2 font-bold">${escapeHtml(item.department)}</td>
+            <td class="p-2 text-blue-700 font-bold">${escapeHtml(item.nama_produk)}</td>
+            <td class="p-2 font-mono font-bold text-emerald-600">${escapeHtml(item.target_shift)} Pcs</td>
+            <td class="p-2 text-center">
+              <button data-action="delete-target" data-id="${escapeHtml(item.id)}" class="text-red-600 font-bold hover:underline">Hapus</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    document.getElementById('tableBodyTarget').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action="delete-target"]');
+      if (btn) deleteTarget(btn.dataset.id);
+    });
+
+    async function deleteTarget(id) {
+      if (!confirm('Hapus target ini?')) return;
+      if (navigator.onLine && getSupabase()) {
+        await getSupabase().from('master_target').delete().eq('id', id);
+      }
+      loadTargetData();
+    }
+
+    function openModalMesin() { document.getElementById('modalMesin').classList.remove('hidden'); }
+    function closeModalMesin() { document.getElementById('modalMesin').classList.add('hidden'); }
+
+    // Menandai apakah tabel 'master_mesin' tersedia di Supabase.
+    // Kalau belum dibuat, aplikasi tetap jalan pakai data lokal (di memori)
+    // supaya tidak error total, tapi akan menampilkan peringatan ke user.
+    let masterMesinTableAvailable = true;
+
+    // Ambil daftar unit mesin dari Supabase (tabel: master_mesin, kolom: department, nama_mesin)
+    // Kalau tabel belum ada / gagal, tetap pakai MASTER_UNITS default (in-memory) sebagai fallback.
+    async function loadMesinData() {
+      if (!(navigator.onLine && getSupabase())) {
+        renderMasterView();
+        return;
+      }
+      const res = await getSupabase().from('master_mesin').select('*').order('nama_mesin', { ascending: true });
+      if (res.error) {
+        masterMesinTableAvailable = false;
+        renderMasterView();
+        return;
+      }
+      masterMesinTableAvailable = true;
+      if (res.data && res.data.length > 0) {
+        const grouped = {};
+        res.data.forEach(row => {
+          if (!grouped[row.department]) grouped[row.department] = [];
+          if (!grouped[row.department].includes(row.nama_mesin)) grouped[row.department].push(row.nama_mesin);
+        });
+        MASTER_UNITS = grouped;
+      }
+      updateMesinOptions();
+      renderMasterView();
+    }
+
+    async function saveMesinManual() {
+      const dept = document.getElementById('mm_dept').value;
+      const nama = document.getElementById('mm_nama').value.trim();
+      if (!nama) return alert('Nama unit mesin wajib diisi!');
+
+      if (!MASTER_UNITS[dept]) MASTER_UNITS[dept] = [];
+      if (!MASTER_UNITS[dept].includes(nama)) {
+        MASTER_UNITS[dept].push(nama);
+      }
+
+      if (navigator.onLine && getSupabase()) {
+        const { error } = await getSupabase().from('master_mesin').insert([{ department: dept, nama_mesin: nama }]);
+        if (error) {
+          masterMesinTableAvailable = false;
+          alert('⚠️ Tersimpan sementara di browser saja. Data mesin TIDAK permanen karena tabel "master_mesin" belum tersedia/gagal diakses di Supabase. Hubungi admin untuk membuat tabel tersebut.');
         }
+      } else {
+        alert('⚠️ Sedang offline: unit mesin ini hanya tersimpan sementara di perangkat ini dan belum tersinkron ke server.');
+      }
+
+      closeModalMesin();
+      updateMesinOptions();
+      renderMasterView();
+    }
+
+    async function deleteMesinUnit(dept, nama) {
+      if (!confirm(`Hapus ${nama} dari ${dept}?`)) return;
+      MASTER_UNITS[dept] = MASTER_UNITS[dept].filter(m => m !== nama);
+
+      if (navigator.onLine && getSupabase()) {
+        await getSupabase().from('master_mesin').delete().eq('department', dept).eq('nama_mesin', nama);
+      }
+
+      updateMesinOptions();
+      renderMasterView();
+    }
+
+    function renderMasterView() {
+      const container = document.getElementById('masterUnitDetails');
+      container.innerHTML = '';
+
+      if (!masterMesinTableAvailable) {
+        container.innerHTML += `
+          <div class="p-3 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg text-xs font-bold">
+            ⚠️ Tabel "master_mesin" belum tersedia di database. Perubahan pada bagian ini hanya tersimpan sementara di browser dan akan hilang saat refresh. Minta admin membuat tabel master_mesin (department, nama_mesin) di Supabase.
+          </div>
+        `;
+      }
+
+      Object.keys(MASTER_UNITS).forEach(dept => {
+        let cards = MASTER_UNITS[dept].map(u => `
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-lg text-xs font-mono border shadow-sm">
+            ${escapeHtml(u)}
+            <button data-action="delete-mesin" data-dept="${escapeHtml(dept)}" data-nama="${escapeHtml(u)}" class="text-red-500 font-bold hover:text-red-700 ml-1">✕</button>
+          </span>
+        `).join(' ');
+
+        container.innerHTML += `
+          <div class="p-3.5 border rounded-xl bg-slate-50">
+            <div class="flex justify-between items-center mb-2 border-b pb-1">
+              <h3 class="font-bold text-xs text-slate-700">${escapeHtml(dept)} (${MASTER_UNITS[dept].length} Unit Aktif)</h3>
+            </div>
+            <div class="flex flex-wrap gap-1.5">${cards}</div>
+          </div>
+        `;
+      });
+    }
+
+    document.getElementById('masterUnitDetails').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action="delete-mesin"]');
+      if (btn) deleteMesinUnit(btn.dataset.dept, btn.dataset.nama);
+    });
+
+    function initAppAfterLogin() {
+      document.getElementById('tanggal').value = new Date().toISOString().split('T')[0];
+      loadMesinData();
+      addGarapanItem();
+      SyncManager.updateBadge();
+    }
+  </script>
+  </div><!-- /#appRoot -->
+
+  <!-- ============================================== -->
+  <!-- SCRIPT AUTENTIKASI & ROLE-BASED ACCESS CONTROL -->
+  <!-- ============================================== -->
+  <script>
+    let currentUser = null; // { id, email, role }
+
+    // Menu/aksi yang hanya boleh diakses role tertentu.
+    // 'operator' hanya boleh isi & kirim laporan shift (Tab 1).
+    // 'supervisor' & 'admin' boleh akses Approval + Master Data.
+    const RESTRICTED_TABS = {
+      'tab-approval': ['supervisor', 'admin'],
+      'tab-master': ['admin']
+    };
+
+    function applyRoleRestrictions() {
+      const role = currentUser?.role || 'operator';
+      Object.keys(RESTRICTED_TABS).forEach(tabId => {
+        const btn = document.getElementById('btn-' + tabId);
+        if (!btn) return;
+        const allowed = RESTRICTED_TABS[tabId].includes(role);
+        btn.style.display = allowed ? '' : 'none';
+      });
+    }
+
+    // Ambil role user dari tabel 'profiles'. Kalau tabel belum ada atau
+    // user belum terdaftar di sana, default ke role paling terbatas ('operator')
+    // demi keamanan (fail-safe, bukan fail-open).
+    async function fetchUserRole(userId, email) {
+      try {
+        const client = getSupabase();
+        if (!client) return 'operator';
+        const { data, error } = await client.from('profiles').select('role').eq('id', userId).maybeSingle();
+        if (error || !data) return 'operator';
+        return data.role || 'operator';
+      } catch (e) {
+        return 'operator';
       }
     }
 
-    // ==========================================
-    // INITIALIZATION ON LOAD
-    // ==========================================
-    window.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('tanggal').valueAsDate = new Date();
-      updateMesinOptions();
-      addGarapanItem();
-      updatePendingBadge();
-      loadKaryawanData();
-      loadTargetData();
+    async function handleLogin() {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const errBox = document.getElementById('loginError');
+      const btn = document.getElementById('btnLogin');
+      errBox.classList.add('hidden');
 
-      const netStatus = document.getElementById('networkStatus');
-      netStatus.innerText = navigator.onLine ? "🟢 Online" : "🔴 Offline Mode";
+      if (!email || !password) {
+        errBox.innerText = 'Email dan password wajib diisi.';
+        errBox.classList.remove('hidden');
+        return;
+      }
 
-      window.addEventListener('online', () => netStatus.innerText = "🟢 Online");
-      window.addEventListener('offline', () => netStatus.innerText = "🔴 Offline Mode");
+      const client = getSupabase();
+      if (!client) {
+        errBox.innerText = 'Tidak ada koneksi ke server autentikasi. Periksa internet Anda.';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = 'Memproses...';
+
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+
+      btn.disabled = false;
+      btn.innerText = 'Masuk';
+
+      if (error) {
+        errBox.innerText = '❌ Login gagal: ' + error.message;
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      await onLoginSuccess(data.user);
+    }
+
+    async function onLoginSuccess(user) {
+      const role = await fetchUserRole(user.id, user.email);
+      currentUser = { id: user.id, email: user.email, role };
+
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('appRoot').classList.remove('hidden');
+      document.getElementById('currentUserBadge').innerText = `${escapeHtml(user.email)} (${escapeHtml(role)})`;
+
+      applyRoleRestrictions();
+      initAppAfterLogin();
+    }
+
+    async function handleLogout() {
+      const client = getSupabase();
+      if (client) await client.auth.signOut();
+      currentUser = null;
+      document.getElementById('appRoot').classList.add('hidden');
+      document.getElementById('loginScreen').classList.remove('hidden');
+      document.getElementById('loginEmail').value = '';
+      document.getElementById('loginPassword').value = '';
+    }
+
+    // Cek sesi yang sudah ada (mis. user refresh halaman) supaya tidak perlu login ulang terus-menerus.
+    window.addEventListener('load', async () => {
+      const client = getSupabase();
+      if (!client) return; // Supabase JS gagal load (mis. offline saat pertama buka) — tetap di layar login.
+      const { data } = await client.auth.getSession();
+      if (data && data.session && data.session.user) {
+        await onLoginSuccess(data.session.user);
+      }
     });
   </script>
 </body>
