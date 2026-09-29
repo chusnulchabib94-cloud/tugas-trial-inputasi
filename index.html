@@ -80,6 +80,12 @@
       <button type="button" onclick="switchTab('tab-approval')" id="btn-tab-approval" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
         ✅ Tabel Approval & Filter
       </button>
+      <button type="button" onclick="switchTab('tab-plan')" id="btn-tab-plan" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
+        📅 Jadwal Produksi
+      </button>
+      <button type="button" onclick="switchTab('tab-qms')" id="btn-tab-qms" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
+        🔬 QMS Kualitas
+      </button>
       <button type="button" onclick="switchTab('tab-master')" id="btn-tab-master" class="px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer">
         ⚙️ Master Data Hub (CRUD)
       </button>
@@ -114,6 +120,8 @@
       </div>
     </div>
 
+    <div id="editBanner" class="hidden p-3 bg-blue-50 border border-blue-300 rounded-xl text-xs font-bold text-blue-800"></div>
+    <div id="myReports" class="hidden p-3 bg-amber-50 border border-amber-300 rounded-xl"></div>
     <form id="shiftForm" class="space-y-4" onsubmit="event.preventDefault();">
       
       <!-- 1. HEADER INPUT -->
@@ -127,7 +135,7 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-500 mb-1">Shift</label>
-            <select id="shift" required class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold">
+            <select id="shift" required onchange="applyShiftTimes()" class="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-semibold">
               <option value="1">Shift 1 (07:00 - 15:00)</option>
               <option value="2">Shift 2 (15:00 - 23:00)</option>
               <option value="3">Shift 3 (23:00 - 07:00)</option>
@@ -186,7 +194,7 @@
       <!-- 3. HASIL PRODUKSI MULTI-GARAPAN -->
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
         <div class="flex justify-between items-center border-b pb-2">
-          <h2 class="font-bold text-slate-700 text-sm">3. Dynamic Multi-Garapan Produk & Traceability</h2>
+          <h2 class="font-bold text-slate-700 text-sm">3. Input Produksi 4x per Shift (tiap 2 jam)</h2>
           <span id="timeSummaryBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border">
             Total: 0 Jam / 8 Jam Shift
           </span>
@@ -195,9 +203,8 @@
         <div id="garapanContainer" class="space-y-4"></div>
         <datalist id="produkList"></datalist>
 
-        <button type="button" id="btnAddGarapan" onclick="addGarapanItem()" class="w-full py-3 border-2 border-dashed border-blue-400 text-blue-700 rounded-xl text-sm font-bold bg-blue-50 hover:bg-blue-100 flex items-center justify-center gap-1">
-          <span>➕</span> Tambah Garapan Produk Baru
-        </button>
+        <p class="text-[11px] text-slate-500">Setiap shift diinput 4 kali (Input 1-4, masing-masing 2 jam). Jam mengikuti shift yang dipilih. Jika mesin berhenti total, centang "Tidak produksi".</p>
+        <button type="button" onclick="fillFromPlan()" class="w-full py-2 border border-indigo-300 text-indigo-700 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100">📅 Isi WO/Produk dari Jadwal Produksi</button>
       </div>
 
       <!-- REALTIME OEE SUMMARY BAR -->
@@ -357,7 +364,7 @@
       </div>
 
       <!-- Advanced Approval Filters (Layout diperbaiki agar tidak tumpang tindih) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
         <div class="min-w-0">
           <label class="block text-[11px] font-bold text-slate-600 mb-1">Cari Keywords</label>
           <input type="text" id="appSearch" oninput="applyApprovalFilter()" placeholder="Mesin, WO, Shift..." class="w-full p-2 border rounded-lg text-xs bg-white">
@@ -392,7 +399,7 @@
             <option value="Good">Good (70% - 85%)</option>
             <option value="Needs Improvement">Needs Improvement (&lt;70%)</option>
           </select>
-        </div>
+        </div><div class="min-w-0"><label class="block text-[11px] font-bold text-slate-600 mb-1">Status</label><select id="appFilterStatus" onchange="applyApprovalFilter()" class="w-full p-2 border rounded-lg text-xs bg-white"><option value="">Semua Status</option><option>Submitted</option><option>Approved</option><option>Rejected</option><option>Draft</option></select></div>
       </div>
 
       <div class="overflow-x-auto">
@@ -527,6 +534,33 @@
       <div class="space-y-3 mt-4" id="masterUnitDetails"></div>
     </div>
   </div>
+
+  <div id="tab-qms" class="p-4 max-w-5xl mx-auto hidden space-y-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Sampel Diperiksa</p><p id="qKSampel" class="text-2xl font-black text-blue-700">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Defect Rate</p><p id="qKRate" class="text-2xl font-black text-red-600">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">First Pass Yield</p><p id="qKFpy" class="text-2xl font-black text-emerald-600">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">NCR Open</p><p id="qKNcr" class="text-2xl font-black text-amber-600">0</p></div></div>
+  <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+    <h2 class="font-bold text-slate-700 border-b pb-2 text-sm">Form Inspeksi Kualitas (IPQC / Final)</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs"><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Tanggal</label><input type="date" id="q_tanggal" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Shift</label><select id="q_shift" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option>1</option><option>2</option><option>3</option></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Department</label><select id="q_dept" onchange="qDeptChange()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option>Blowing</option><option>Vinyl</option><option>Sablon</option><option>Painting</option><option>Assembly</option></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Mesin / Line</label><select id="q_mesin" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Work Order</label><input type="text" id="q_wo" class="w-full p-2 border rounded-lg bg-slate-50 text-sm uppercase font-mono" placeholder="WO-2026-XXXX"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Produk</label><input type="text" id="q_produk" list="produkList" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Jumlah Sampel</label><input type="number" min="1" id="q_sampel" oninput="qCalc()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Disposisi</label><select id="q_disposisi" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option>Pass</option><option>Hold</option><option>Rework</option><option>Reject</option></select></div></div>
+    <p class="text-xs font-bold text-slate-600">Jumlah unit defect per jenis (kosongkan jika 0)</p>
+    <div id="qDefects" class="grid grid-cols-2 md:grid-cols-3 gap-2"></div>
+    <textarea id="q_catatan" rows="2" placeholder="Catatan inspeksi / lokasi defect..." class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></textarea>
+    <p id="qCalc" class="text-xs font-bold text-slate-600"></p>
+    <button type="button" onclick="saveInspeksi()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-sm">Simpan inspeksi</button>
+  </div>
+  <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><h3 class="font-bold text-xs text-indigo-700 mb-2">Pareto Defect</h3><div class="h-60"><canvas id="chartQmsPareto"></canvas></div></div>
+  <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+    <div class="flex justify-between items-center mb-2"><h3 class="font-bold text-xs text-indigo-700">Riwayat Inspeksi & NCR</h3><button type="button" onclick="loadQms()" class="text-xs font-bold text-blue-600">Refresh</button></div>
+    <table class="w-full text-left text-xs min-w-[700px]"><thead><tr class="bg-slate-100 text-slate-600 font-bold"><th class="p-2">Tanggal</th><th class="p-2">Dept / Mesin</th><th class="p-2">WO / Produk</th><th class="p-2">Sampel</th><th class="p-2">Defect</th><th class="p-2">Disposisi</th><th class="p-2">NCR</th></tr></thead><tbody id="qTableBody"></tbody></table>
+  </div>
+</div>
+
+  <div id="tab-plan" class="p-4 max-w-6xl mx-auto hidden space-y-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Total Plan</p><p id="pKPlan" class="text-2xl font-black text-blue-700">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Total Actual OK</p><p id="pKAct" class="text-2xl font-black text-emerald-600">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Plan Attainment</p><p id="pKAch" class="text-2xl font-black text-indigo-700">0</p></div><div class="bg-white p-3 rounded-xl border shadow-sm"><p class="text-xs text-slate-500 font-bold">Belum Ada Laporan</p><p id="pKNo" class="text-2xl font-black text-amber-600">0</p></div></div>
+  <div id="planForm" class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3"><h2 class="font-bold text-slate-700 border-b pb-2 text-sm">Buat Jadwal Produksi</h2><div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs"><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Tanggal</label><input type="date" id="p_tanggal" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Shift</label><select id="p_shift" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option>1</option><option>2</option><option>3</option></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Department</label><select id="p_dept" onchange="planDept()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option>Blowing</option><option>Vinyl</option><option>Sablon</option><option>Painting</option><option>Assembly</option></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Mesin / Line</label><select id="p_mesin" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></select></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Work Order</label><input id="p_wo" class="w-full p-2 border rounded-lg bg-slate-50 text-sm uppercase font-mono" placeholder="WO-2026-XXXX"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Produk</label><input id="p_produk" list="produkList" onchange="planAutoQty()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Qty Plan (per shift)</label><input type="number" min="1" id="p_qty" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div class="flex items-end"><button type="button" onclick="savePlan()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-sm">Simpan jadwal</button></div></div></div>
+  <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+    <div class="grid grid-cols-3 gap-3 text-xs"><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Dari</label><input type="date" id="pf_from" onchange="loadPlan()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Sampai</label><input type="date" id="pf_to" onchange="loadPlan()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"></div><div><label class="block text-[11px] font-bold text-slate-600 mb-1">Department</label><select id="pf_dept" onchange="loadPlan()" class="w-full p-2 border rounded-lg bg-slate-50 text-sm"><option value="">Semua</option><option>Blowing</option><option>Vinyl</option><option>Sablon</option><option>Painting</option><option>Assembly</option></select></div></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-xs min-w-[720px]"><thead><tr class="bg-slate-100 text-slate-600 font-bold"><th class="p-2">Tanggal / Shift</th><th class="p-2">Mesin</th><th class="p-2">WO / Produk</th><th class="p-2">Plan</th><th class="p-2">Actual OK</th><th class="p-2">Pencapaian</th><th class="p-2">Status</th><th class="p-2"></th></tr></thead><tbody id="planBody"></tbody></table></div>
+  </div>
+</div>
 
   <!-- MODAL EDIT/ADD KARYAWAN -->
   <div id="modalKaryawan" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
@@ -743,7 +777,8 @@
         // ada di antrean supaya tidak hilang, dan akan dicoba lagi nanti.
         for (const item of queue) {
           try {
-            const { error } = await client.from('laporan_shift').insert([item.payload]);
+            let { error } = await client.from('laporan_shift').insert([item.payload]);
+            if (error && error.code === '23505') error = null;
             if (!error) {
               await this.deleteQueueItem(item.id);
               successCount++;
@@ -797,7 +832,7 @@
           return;
         }
       }
-      ['tab-input', 'tab-dashboard', 'tab-approval', 'tab-master'].forEach(t => {
+      ['tab-input', 'tab-dashboard', 'tab-approval', 'tab-plan', 'tab-qms', 'tab-master'].forEach(t => {
         document.getElementById(t).classList.add('hidden');
         const btn = document.getElementById('btn-' + t);
         if (btn) btn.className = "px-4 py-2 bg-blue-800 text-white hover:bg-blue-600 rounded-lg whitespace-nowrap cursor-pointer";
@@ -812,6 +847,8 @@
       }
       if (tabId === 'tab-approval') loadApprovalData();
       if (tabId === 'tab-master') renderMasterView();
+      if (tabId === 'tab-qms') initQms();
+      if (tabId === 'tab-plan') initPlan();
     }
 
     function switchMasterSubTab(subId) {
@@ -941,46 +978,74 @@
       }
     }
 
-    let garapanCounter = 0;
-    function addGarapanItem() {
-      garapanCounter++;
-      const container = document.getElementById('garapanContainer');
-      const div = document.createElement('div');
-      div.className = "garapan-card p-3.5 border border-slate-200 rounded-xl bg-slate-50 space-y-3 shadow-sm";
-      
-      const downtimeOpts = DOWNTIME_CATEGORIES.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    const $ = id => document.getElementById(id);
+    const SHIFT_START = { 1: 7, 2: 15, 3: 23 };
+    const hh = n => String(n % 24).padStart(2, '0') + ':00';
+    const gf = (lbl, cls, extra) => `<div><label class="block text-[11px] font-bold text-slate-600 mb-1">${lbl}</label><input ${extra} class="${cls} w-full p-2 border rounded-lg text-sm"></div>`;
 
-      div.innerHTML = `
-        <div class="flex justify-between items-center border-b pb-2">
-          <span class="text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-200">Baris Garapan #${garapanCounter}</span>
-          ${garapanCounter > 1 ? `<button type="button" onclick="removeGarapan(this)" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-md font-bold hover:bg-red-200">Hapus Baris</button>` : ''}
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Work Order</label><input type="text" class="g-wo w-full p-2 border rounded-lg text-sm bg-white uppercase font-mono" placeholder="WO-2026-XXXX" required></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">No. Lot Material</label><input type="text" class="g-lot w-full p-2 border rounded-lg text-sm bg-white uppercase font-mono" placeholder="LOT-88912" required></div>
-          <div class="col-span-2 md:col-span-1"><label class="block text-[11px] font-bold text-slate-600 mb-1">Nama Produk / Artikel</label><input type="text" class="g-produk w-full p-2 border rounded-lg text-sm bg-white" placeholder="Nama Produk..." required list="produkList"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Mulai</label><input type="time" class="g-mulai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Jam Selesai</label><input type="time" class="g-selesai w-full p-2 border rounded-lg text-sm bg-white" required onchange="calculateShiftTotals()"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Target Output</label><input type="number" class="g-target w-full p-2 border rounded-lg text-sm bg-white font-semibold" placeholder="0" required oninput="calculateShiftTotals()"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil OK</label><input type="number" class="g-ok w-full p-2 border rounded-lg text-sm bg-green-50 text-green-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Hasil NG (Reject)</label><input type="number" class="g-ng w-full p-2 border rounded-lg text-sm bg-red-50 text-red-700 font-bold" placeholder="0" required oninput="calculateShiftTotals()"></div>
-          <div><label class="block text-[11px] font-bold text-slate-600 mb-1">Downtime (Menit)</label><input type="number" class="g-downtime w-full p-2 border rounded-lg text-sm bg-amber-50 text-amber-700 font-bold" placeholder="0" oninput="calculateShiftTotals()"></div>
-          
-          <div class="col-span-2 md:col-span-3">
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">Kategori Alasan Downtime</label>
-            <select class="g-alasan w-full p-2 border rounded-lg text-xs bg-white font-semibold text-slate-700">
-              ${downtimeOpts}
-            </select>
+    function buildSesi() {
+      const box = $('garapanContainer');
+      box.innerHTML = '';
+      const dt = DOWNTIME_CATEGORIES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      for (let i = 0; i < 4; i++) {
+        const d = document.createElement('div');
+        d.className = 'garapan-card p-3.5 border border-slate-200 rounded-xl bg-slate-50 space-y-3 shadow-sm';
+        d.dataset.sesi = i + 1;
+        d.innerHTML = `
+          <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
+            <span class="sesi-label text-xs font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-200"></span>
+            <div class="flex items-center gap-3 text-[11px] font-bold">
+              ${i > 0 ? `<button type="button" onclick="copySesi(this)" class="text-blue-600 hover:underline">Salin WO/Produk dari input sebelumnya</button>` : ''}
+              <label class="flex items-center gap-1 text-slate-600"><input type="checkbox" onchange="toggleIdle(this)"> Tidak produksi</label>
+            </div>
           </div>
-        </div>
-      `;
-      container.appendChild(div);
+          <input type="hidden" class="g-mulai"><input type="hidden" class="g-selesai">
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+            ${gf('No. Work Order', 'g-wo bg-white uppercase font-mono', 'type="text" placeholder="WO-2026-XXXX"')}
+            ${gf('No. Lot Material', 'g-lot bg-white uppercase font-mono', 'type="text" placeholder="LOT-88912"')}
+            ${gf('Nama Produk / Artikel', 'g-produk bg-white', 'type="text" list="produkList" onchange="autoTarget(this)" placeholder="Nama produk..."')}
+            ${gf('Target Output (2 jam)', 'g-target bg-white font-semibold', `type="number" placeholder="0" oninput="this.dataset.auto='';calculateShiftTotals()"`)}
+            ${gf('Hasil OK', 'g-ok bg-green-50 text-green-700 font-bold', 'type="number" placeholder="0" oninput="calculateShiftTotals()"')}
+            ${gf('Hasil NG (Reject)', 'g-ng bg-red-50 text-red-700 font-bold', 'type="number" placeholder="0" oninput="calculateShiftTotals()"')}
+            ${gf('Downtime (Menit)', 'g-downtime bg-amber-50 text-amber-700 font-bold', 'type="number" placeholder="0" oninput="calculateShiftTotals()"')}
+            <div class="col-span-2"><label class="block text-[11px] font-bold text-slate-600 mb-1">Kategori Alasan Downtime</label><select class="g-alasan w-full p-2 border rounded-lg text-xs bg-white font-semibold">${dt}</select></div>
+          </div>`;
+        box.appendChild(d);
+      }
+      applyShiftTimes();
+    }
+
+    function applyShiftTimes() {
+      const st = SHIFT_START[$('shift').value] || 7;
+      document.querySelectorAll('.garapan-card').forEach((c, i) => {
+        const a = hh(st + i * 2), b = hh(st + i * 2 + 2);
+        c.querySelector('.g-mulai').value = a;
+        c.querySelector('.g-selesai').value = b;
+        c.querySelector('.sesi-label').innerText = `Input ke-${i + 1}: ${a} - ${b}`;
+      });
       calculateShiftTotals();
     }
 
-    function removeGarapan(btn) {
-      btn.closest('.garapan-card').remove();
+    function copySesi(btn) {
+      const c = btn.closest('.garapan-card'), p = c.previousElementSibling;
+      ['g-wo', 'g-lot', 'g-produk'].forEach(k => { c.querySelector('.' + k).value = p.querySelector('.' + k).value; });
+      autoTarget(c.querySelector('.g-produk'));
+    }
+
+    function toggleIdle(cb) {
+      const c = cb.closest('.garapan-card');
+      c.dataset.idle = cb.checked ? '1' : '';
+      const set = (k, v) => { c.querySelector('.' + k).value = v; };
+      if (cb.checked) { set('g-target', 0); set('g-ok', 0); set('g-ng', 0); set('g-downtime', 120); }
+      else { set('g-target', ''); set('g-downtime', ''); }
       calculateShiftTotals();
+    }
+
+    // Target per sesi = Master Target per shift / 4 (isi otomatis, tetap bisa diubah manual)
+    function autoTarget(inp) {
+      const c = inp.closest('.garapan-card'), tg = c.querySelector('.g-target');
+      const t = TARGET_CACHE.find(x => x.department === $('department').value && String(x.nama_produk).toLowerCase() === inp.value.trim().toLowerCase());
+      if (t && (!tg.value || tg.dataset.auto === '1')) { tg.value = Math.round(t.target_shift / 4); tg.dataset.auto = '1'; calculateShiftTotals(); }
     }
 
     function calculateShiftTotals() {
@@ -1024,11 +1089,11 @@
         warningBox.classList.add('hidden');
       }
 
-      let availability = totalMinutes > 0 ? ((totalMinutes - totalDowntimeMin) / totalMinutes) * 100 : 0;
-      let quality = (totalOK + totalNG) > 0 ? (totalOK / (totalOK + totalNG)) * 100 : 0;
-      let performance = totalTarget > 0 ? ((totalOK + totalNG) / totalTarget) * 100 : 0;
+      const _o = calcOee(currentGarapan()); let availability = _o.avail;
+      let quality = _o.qual;
+      let performance = _o.perf;
 
-      const oeeTotal = (availability * quality * performance) / 10000;
+      const oeeTotal = _o.oee;
 
       document.getElementById('oeeAvail').innerText = `${availability.toFixed(1)}%`;
       document.getElementById('oeePerf').innerText = `${performance.toFixed(1)}%`;
@@ -1071,9 +1136,10 @@
       document.querySelectorAll('.garapan-card').forEach(card => {
         const wo = card.querySelector('.g-wo').value.trim();
         const produk = card.querySelector('.g-produk').value.trim();
-        if (!wo || !produk) garapanIncomplete = true;
+        const idle = card.dataset.idle === '1';
+        if (status === 'Submitted' && ((!idle && (!wo || !produk)) || (idle && card.querySelector('.g-alasan').value === DOWNTIME_CATEGORIES[0]))) garapanIncomplete = true;
         garapan.push({
-          work_order: wo,
+          sesi: parseInt(card.dataset.sesi), tidak_produksi: idle, work_order: wo,
           lot_number: card.querySelector('.g-lot').value.trim(),
           produk: produk,
           jam_mulai: card.querySelector('.g-mulai').value,
@@ -1089,7 +1155,7 @@
       if (garapan.length === 0 || garapanIncomplete) {
         statusMsg.classList.remove('hidden');
         statusMsg.className = "text-center font-bold text-sm bg-red-100 text-red-800 p-2 rounded-lg";
-        statusMsg.innerText = "⚠️ Setiap baris garapan wajib memiliki No. Work Order dan Nama Produk.";
+        statusMsg.innerText = "⚠️ Kirim laporan: keempat input wajib berisi No. WO & Produk (atau centang Tidak produksi + alasan). Gunakan Simpan Draft jika belum lengkap.";
         return;
       }
 
@@ -1102,29 +1168,37 @@
         assembly_mode: document.getElementById('assembly_mode').value,
         operators: operators,
         garapan: garapan,
-        oee_score: parseFloat(document.getElementById('oeeTotal').innerText) || 0,
+        oee_score: calcOee(garapan).oee,
         status: status,
         created_by: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : null,
         created_at: new Date().toISOString()
       };
 
       statusMsg.classList.remove('hidden');
-
-      if (navigator.onLine && getSupabase()) {
-        const { error } = await getSupabase().from('laporan_shift').insert([payload]);
-        if (error) {
-          await SyncManager.addQueue(payload);
-          statusMsg.className = "text-center font-bold text-sm bg-amber-100 text-amber-800 p-2 rounded-lg";
-          statusMsg.innerText = "⚠️ Gagal koneksi ke server. Tersimpan otomatis di Antrean Offline (IndexedDB) dan akan disinkronkan ulang.";
-        } else {
-          statusMsg.className = "text-center font-bold text-sm bg-emerald-100 text-emerald-800 p-2 rounded-lg";
-          statusMsg.innerText = "🚀 Laporan Shift Berhasil Terkirim & Terintegrasi!";
-        }
-      } else {
+      const say = (cls, msg) => { statusMsg.className = 'text-center font-bold text-sm p-2 rounded-lg ' + cls; statusMsg.innerText = msg; };
+      const c = getSupabase();
+      if (!(navigator.onLine && c)) {
         await SyncManager.addQueue(payload);
-        statusMsg.className = "text-center font-bold text-sm bg-amber-100 text-amber-800 p-2 rounded-lg";
-        statusMsg.innerText = "📦 Offline Mode: Tersimpan aman di Antrean Offline Browser (IndexedDB).";
+        return say('bg-amber-100 text-amber-800', '📦 Offline: tersimpan di antrean browser. Cek duplikat dilakukan saat sinkron.');
       }
+      let dq = c.from('laporan_shift').select('id,status').eq('tanggal', payload.tanggal).eq('shift', payload.shift).eq('mesin', payload.mesin).neq('status', 'Rejected');
+      if (editingReportId) dq = dq.neq('id', editingReportId);
+      const dup = await dq.limit(1);
+      if (dup.data && dup.data.length) return say('bg-red-100 text-red-800', `⛔ Laporan ${payload.mesin} Shift ${payload.shift} tanggal ${payload.tanggal} sudah ada (status ${dup.data[0].status}). Lanjutkan lewat daftar "Laporan Anda" di atas.`);
+      let r;
+      if (editingReportId) {
+        const { created_at, created_by, ...upd } = payload;
+        upd.reject_reason = null;
+        r = await c.from('laporan_shift').update(upd).eq('id', editingReportId).select('id').single();
+      } else r = await c.from('laporan_shift').insert([payload]).select('id').single();
+      if (r.error) {
+        if (r.error.code) return say('bg-red-100 text-red-800', '❌ Ditolak server: ' + r.error.message);
+        await SyncManager.addQueue(payload);
+        return say('bg-amber-100 text-amber-800', '⚠️ Koneksi bermasalah. Tersimpan di antrean offline dan dikirim ulang otomatis.');
+      }
+      if (status === 'Draft') { editingReportId = r.data.id; say('bg-slate-100 text-slate-800', '💾 Draft tersimpan. Lanjutkan kapan saja dari daftar "Laporan Anda".'); }
+      else { say('bg-emerald-100 text-emerald-800', '🚀 Laporan terkirim untuk approval.'); cancelEdit(); }
+      loadMyReports();
     }
 
     // Dashboard Analytics (Dengan Fitur Filter Interaktif)
@@ -1179,7 +1253,7 @@
       const dateOeeMap = {};
 
       filteredData.forEach(row => {
-        totalOee += row.oee_score || 0;
+        const o = calcOee(row.garapan, row.oee_score); totalOee += o.oee;
         
         // Perhitungan Garapan
         let rowOk = 0, rowNg = 0, rowDt = 0, rowTarget = 0;
@@ -1200,9 +1274,9 @@
         totalDt += rowDt;
 
         // Hitung estimasi Komponen OEE sederhana per Laporan
-        let avail = 100 - Math.min(100, (rowDt / 480) * 100);
-        let perf = rowTarget > 0 ? Math.min(100, ((rowOk + rowNg) / rowTarget) * 100) : 0;
-        let qual = (rowOk + rowNg) > 0 ? (rowOk / (rowOk + rowNg)) * 100 : 0;
+        let avail = o.avail;
+        let perf = o.perf;
+        let qual = o.qual;
 
         sumAvail += avail;
         sumPerf += perf;
@@ -1211,7 +1285,7 @@
         // Daily Trend Data
         const dateKey = row.tanggal || 'N/A';
         if (!dateOeeMap[dateKey]) dateOeeMap[dateKey] = [];
-        dateOeeMap[dateKey].push(row.oee_score || 0);
+        dateOeeMap[dateKey].push(o.oee);
       });
 
       const count = filteredData.length || 1;
@@ -1248,7 +1322,7 @@
       if (chartComponentsInstance) chartComponentsInstance.destroy();
 
       chartComponentsInstance = new Chart(ctxComp, {
-        type: 'doughnut',
+        type: 'bar',
         data: {
           labels: ['Availability', 'Performance', 'Quality'],
           datasets: [{
@@ -1326,12 +1400,13 @@
         if (endDate && item.tanggal > endDate) matchDate = false;
 
         let matchOeeCat = true;
-        const score = item.oee_score || 0;
+        const score = oeeOf(item);
         if (oeeCategory === 'World Class' && score < 85) matchOeeCat = false;
         if (oeeCategory === 'Good' && (score < 70 || score >= 85)) matchOeeCat = false;
         if (oeeCategory === 'Needs Improvement' && score >= 70) matchOeeCat = false;
 
-        return matchSearch && matchDept && matchKoor && matchDate && matchOeeCat;
+        const st = document.getElementById('appFilterStatus').value;
+        return matchSearch && matchDept && matchKoor && matchDate && matchOeeCat && (!st || item.status === st);
       });
 
       currentPage = 1;
@@ -1339,74 +1414,57 @@
     }
 
     function renderApprovalTable() {
-      const tbody = document.getElementById('tableBodyApproval');
-      tbody.innerHTML = '';
-
       const totalPages = Math.ceil(filteredApprovalData.length / itemsPerPage) || 1;
-      const start = (currentPage - 1) * itemsPerPage;
-      const end = start + itemsPerPage;
-      const pageData = filteredApprovalData.slice(start, end);
-
-      if (pageData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Tidak ada data sesuai filter.</td></tr>';
-      } else {
-        pageData.forEach(row => {
-          // Jumlahkan SEMUA baris garapan (bukan hanya produk pertama)
-          // supaya laporan multi-produk tampil lengkap.
-          const agg = aggregateGarapan(row);
-          const isApproved = row.status === 'Approved';
-          tbody.innerHTML += `
-            <tr class="border-b hover:bg-slate-50">
-              <td class="p-2.5 font-semibold">${escapeHtml(row.tanggal)} (Shift ${escapeHtml(row.shift)})</td>
-              <td class="p-2.5">${escapeHtml(row.department)} / ${escapeHtml(row.mesin)}</td>
-              <td class="p-2.5 font-bold text-slate-700">${escapeHtml(row.koordinator)}</td>
-              <td class="p-2.5 font-mono" title="${agg.produkCount} produk">${agg.ok} / ${agg.target}${agg.produkCount > 1 ? ` <span class="text-slate-400">(${agg.produkCount} produk)</span>` : ''}</td>
-              <td class="p-2.5 font-black text-amber-600">${escapeHtml(row.oee_score || 0)}%</td>
-              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">${escapeHtml(row.status)}</span></td>
-              <td class="p-2.5 text-center">
-                ${isApproved
-                  ? `<span class="text-emerald-600 font-bold text-[10px]">✓ Disetujui${row.approved_by ? ' oleh ' + escapeHtml(row.approved_by) : ''}</span>`
-                  : `<button data-action="approve-shift" data-id="${escapeHtml(row.id)}" class="bg-emerald-600 text-white px-2.5 py-1 rounded font-bold text-[10px] hover:bg-emerald-700">Approve</button>`}
-              </td>
-            </tr>
-          `;
-        });
-      }
-
-      document.getElementById('pageInfo').innerText = `Halaman ${currentPage} dari ${totalPages} (Total: ${filteredApprovalData.length} Data)`;
-      document.getElementById('btnPrevPage').disabled = currentPage === 1;
-      document.getElementById('btnNextPage').disabled = currentPage === totalPages;
+      const pageData = filteredApprovalData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+      const me = currentUser?.email;
+      const cls = { Approved: 'bg-emerald-100 text-emerald-700', Rejected: 'bg-red-100 text-red-700', Submitted: 'bg-blue-100 text-blue-700', Draft: 'bg-slate-200 text-slate-600' };
+      $('tableBodyApproval').innerHTML = pageData.length ? pageData.map(row => {
+        const agg = aggregateGarapan(row), o = calcOee(row.garapan, row.oee_score), id = escapeHtml(row.id);
+        let act = '<span class="text-slate-400 text-[10px]">Menunggu operator</span>';
+        if (row.status === 'Approved') act = `<span class="text-emerald-600 font-bold text-[10px]">✓ ${escapeHtml(row.approved_by || '')}</span>`;
+        else if (row.status === 'Submitted') act = row.created_by === me
+          ? '<span class="text-slate-400 text-[10px]">Laporan Anda, perlu approver lain</span>'
+          : `<button data-action="approve-shift" data-id="${id}" class="bg-emerald-600 text-white px-2.5 py-1 rounded font-bold text-[10px]">Approve</button> <button data-action="reject-shift" data-id="${id}" class="bg-red-600 text-white px-2.5 py-1 rounded font-bold text-[10px]">Reject</button>`;
+        return `<tr class="border-b hover:bg-slate-50">
+          <td class="p-2.5 font-semibold">${escapeHtml(row.tanggal)} (Shift ${escapeHtml(row.shift)})</td>
+          <td class="p-2.5">${escapeHtml(row.department)} / ${escapeHtml(row.mesin)}</td>
+          <td class="p-2.5 font-bold text-slate-700">${escapeHtml(row.koordinator)}</td>
+          <td class="p-2.5 font-mono">${agg.ok} / ${agg.target}</td>
+          <td class="p-2.5 font-black text-amber-600" title="A ${o.avail.toFixed(1)}% · P ${o.perf.toFixed(1)}% · Q ${o.qual.toFixed(1)}%">${o.oee.toFixed(1)}%</td>
+          <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${cls[row.status] || ''}">${escapeHtml(row.status)}</span>${row.status === 'Rejected' && row.reject_reason ? `<div class="text-[10px] text-red-600 mt-0.5">${escapeHtml(row.reject_reason)}</div>` : ''}</td>
+          <td class="p-2.5 text-center">${act}</td></tr>`;
+      }).join('') : '<tr><td colspan="7" class="p-4 text-center text-slate-400">Tidak ada data sesuai filter.</td></tr>';
+      $('pageInfo').innerText = `Halaman ${currentPage} dari ${totalPages} (Total: ${filteredApprovalData.length} Data)`;
+      $('btnPrevPage').disabled = currentPage === 1;
+      $('btnNextPage').disabled = currentPage === totalPages;
     }
 
-    function changePage(direction) {
-      currentPage += direction;
-      renderApprovalTable();
-    }
+    function changePage(direction) { currentPage += direction; renderApprovalTable(); }
 
-    document.getElementById('tableBodyApproval').addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-action="approve-shift"]');
-      if (btn) approveShift(btn.dataset.id);
+    $('tableBodyApproval').addEventListener('click', e => {
+      const b = e.target.closest('button[data-action]');
+      if (b && b.dataset.action === 'approve-shift') decideShift(b.dataset.id, true);
+      if (b && b.dataset.action === 'reject-shift') decideShift(b.dataset.id, false);
     });
 
-    async function approveShift(id) {
-      if (!navigator.onLine || !getSupabase()) {
-        alert('Perlu koneksi internet untuk melakukan approval.');
-        return;
-      }
-      if (!confirm('Setujui laporan shift ini?')) return;
-      // Catat siapa yang approve & kapan (audit trail), bukan hanya ubah status.
-      const approverEmail = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : 'unknown';
-      const { error } = await getSupabase().from('laporan_shift').update({
-        status: 'Approved',
-        approved_by: approverEmail,
-        approved_at: new Date().toISOString()
-      }).eq('id', id);
-      if (error) {
-        alert('❌ Gagal menyetujui laporan: ' + error.message);
+    async function decideShift(id, approve) {
+      const c = getSupabase();
+      if (!navigator.onLine || !c) return alert('Perlu koneksi internet.');
+      const row = allApprovalData.find(x => String(x.id) === String(id));
+      if (!row || row.status !== 'Submitted') return alert('Hanya laporan berstatus Submitted yang dapat diproses.');
+      if (row.created_by === currentUser.email) return alert('Anda tidak boleh memproses laporan yang Anda buat sendiri.');
+      const now = new Date().toISOString();
+      let upd;
+      if (approve) {
+        if (!confirm('Setujui laporan ini? Setelah disetujui laporan terkunci.')) return;
+        upd = { status: 'Approved', approved_by: currentUser.email, approved_at: now, reject_reason: null };
       } else {
-        alert('✅ Laporan disetujui!');
-        loadApprovalData();
+        const why = prompt('Alasan penolakan (wajib diisi, akan tampil ke operator):');
+        if (!why || !why.trim()) return;
+        upd = { status: 'Rejected', reject_reason: why.trim(), rejected_by: currentUser.email, rejected_at: now };
       }
+      const { error } = await c.from('laporan_shift').update(upd).eq('id', id).eq('status', 'Submitted');
+      if (error) alert('❌ Gagal: ' + error.message); else loadApprovalData();
     }
 
     // Ekspor Laporan Excel & PDF Engine
@@ -1432,7 +1490,7 @@
             Hasil_NG: g.hasil_ng || 0,
             Downtime_Menit: g.downtime_menit || 0,
             Alasan_Downtime: g.alasan_downtime || '-',
-            OEE_Score: `${r.oee_score || 0}%`,
+            OEE_Score: `${oeeOf(r).toFixed(1)}%`,
             Status: r.status
           });
         });
@@ -1461,7 +1519,7 @@
           r.mesin,
           r.koordinator,
           `${agg.ok} / ${agg.target} Pcs${agg.produkCount > 1 ? ` (${agg.produkCount} produk)` : ''}`,
-          `${r.oee_score || 0}%`,
+          `${oeeOf(r).toFixed(1)}%`,
           r.status
         ];
       });
@@ -1508,7 +1566,7 @@
             })).filter(item => item.nama_produk !== '');
 
             if (navigator.onLine && getSupabase()) {
-              await getSupabase().from('master_target').upsert(formatted);
+              await saveTargetsBulk(formatted);
             }
             loadTargetData();
 
@@ -1634,66 +1692,195 @@
       loadKaryawanData();
     }
 
-    function openModalTarget() { document.getElementById('modalTarget').classList.remove('hidden'); }
-    function closeModalTarget() { document.getElementById('modalTarget').classList.add('hidden'); }
+    let TARGET_CACHE = [];
+    const lsT = () => { try { return JSON.parse(localStorage.getItem('mes_target_local') || '[]'); } catch (e) { return []; } };
+    const setLsT = a => { try { localStorage.setItem('mes_target_local', JSON.stringify(a)); } catch (e) {} };
+
+    function openModalTarget(t) {
+      $('m_target_id').value = t ? t.id : '';
+      $('mt_dept').value = t ? t.department : 'Blowing';
+      $('mt_produk').value = t ? t.nama_produk : '';
+      $('mt_target').value = t ? t.target_shift : '';
+      $('modalTarget').classList.remove('hidden');
+    }
+    function closeModalTarget() { $('modalTarget').classList.add('hidden'); }
 
     async function saveTargetManual() {
-      const item = {
-        department: document.getElementById('mt_dept').value,
-        nama_produk: document.getElementById('mt_produk').value,
-        target_shift: parseFloat(document.getElementById('mt_target').value) || 0
-      };
-      if (navigator.onLine && getSupabase()) {
-        await getSupabase().from('master_target').upsert([item]);
+      const item = { department: $('mt_dept').value, nama_produk: $('mt_produk').value.trim(), target_shift: parseFloat($('mt_target').value) };
+      if (!item.nama_produk || !(item.target_shift > 0)) return alert('Nama produk dan target (>0) wajib diisi.');
+      let id = $('m_target_id').value;
+      if (!id) {
+        const d = TARGET_CACHE.find(t => t.department === item.department && String(t.nama_produk).toLowerCase() === item.nama_produk.toLowerCase());
+        if (d) id = String(d.id);
+      }
+      const c = getSupabase();
+      let err = null;
+      if (id.startsWith('L')) setLsT(lsT().map(t => t.id === id ? { ...t, ...item } : t));
+      else if (navigator.onLine && c) {
+        const r = id ? await c.from('master_target').update(item).eq('id', id) : await c.from('master_target').insert([item]);
+        err = r.error;
+      } else err = { message: 'Offline' };
+      if (err) {
+        setLsT([...lsT(), { ...item, id: 'L' + Date.now() }]);
+        alert('⚠️ Gagal simpan ke Supabase: ' + err.message + '\n\nData disimpan sementara di perangkat ini dan dikirim otomatis saat server siap. Jalankan supabase_setup.sql agar tabel & izin (RLS) benar.');
       }
       closeModalTarget();
       loadTargetData();
     }
 
-    async function loadTargetData() {
-      const tbody = document.getElementById('tableBodyTarget');
-      tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Memuat target...</td></tr>';
-      let data = [];
-      if (navigator.onLine && getSupabase()) {
-        const res = await getSupabase().from('master_target').select('*');
-        if (res.data) data = res.data;
-      }
-
-      const prodDatalist = document.getElementById('produkList');
-      prodDatalist.innerHTML = '';
-
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada target terdaftar. Gunakan fitur Tambah / Import CSV.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = '';
-      data.forEach(item => {
-        prodDatalist.innerHTML += `<option value="${escapeHtml(item.nama_produk)}">`;
-        tbody.innerHTML += `
-          <tr class="border-b hover:bg-slate-50">
-            <td class="p-2 font-bold">${escapeHtml(item.department)}</td>
-            <td class="p-2 text-blue-700 font-bold">${escapeHtml(item.nama_produk)}</td>
-            <td class="p-2 font-mono font-bold text-emerald-600">${escapeHtml(item.target_shift)} Pcs</td>
-            <td class="p-2 text-center">
-              <button data-action="delete-target" data-id="${escapeHtml(item.id)}" class="text-red-600 font-bold hover:underline">Hapus</button>
-            </td>
-          </tr>
-        `;
-      });
+    async function saveTargetsBulk(rows) {
+      rows = rows.filter(x => !TARGET_CACHE.some(t => t.department === x.department && t.nama_produk === x.nama_produk));
+      const c = getSupabase();
+      const r = (navigator.onLine && c) ? await c.from('master_target').insert(rows) : { error: { message: 'Offline' } };
+      if (r.error) {
+        setLsT([...lsT(), ...rows.map((x, i) => ({ ...x, id: 'L' + Date.now() + i }))]);
+        alert('⚠️ Import ke server gagal: ' + r.error.message + '. Data disimpan lokal.');
+      } else alert('✅ ' + rows.length + ' target berhasil diimpor.');
     }
 
-    document.getElementById('tableBodyTarget').addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-action="delete-target"]');
-      if (btn) deleteTarget(btn.dataset.id);
+    async function loadTargetData() {
+      let data = [], srvErr = null;
+      const c = getSupabase();
+      if (navigator.onLine && c) {
+        const r = await c.from('master_target').select('*').order('department');
+        if (r.error) srvErr = r.error.message; else data = r.data || [];
+      } else srvErr = 'Offline';
+      const loc = lsT();
+      if (!srvErr && loc.length) {
+        const r = await c.from('master_target').insert(loc.map(x => ({ department: x.department, nama_produk: x.nama_produk, target_shift: x.target_shift })));
+        if (!r.error) { setLsT([]); return loadTargetData(); }
+        srvErr = 'Gagal kirim data lokal: ' + r.error.message;
+      }
+      TARGET_CACHE = [...data, ...loc.map(x => ({ ...x, _local: true }))];
+      $('produkList').innerHTML = [...new Set(TARGET_CACHE.map(t => t.nama_produk))].map(n => `<option value="${escapeHtml(n)}">`).join('');
+      let html = srvErr ? `<tr><td colspan="4" class="p-2 bg-amber-50 text-amber-800 font-bold">⚠️ Server master_target: ${escapeHtml(srvErr)}. Jalankan supabase_setup.sql. Input manual tetap tersimpan lokal.</td></tr>` : '';
+      html += TARGET_CACHE.length ? TARGET_CACHE.map(t => `
+        <tr class="border-b hover:bg-slate-50">
+          <td class="p-2 font-bold">${escapeHtml(t.department)}</td>
+          <td class="p-2 text-blue-700 font-bold">${escapeHtml(t.nama_produk)}${t._local ? ' <span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 rounded">lokal</span>' : ''}</td>
+          <td class="p-2 font-mono font-bold text-emerald-600">${escapeHtml(t.target_shift)} Pcs</td>
+          <td class="p-2 text-center space-x-2">
+            <button data-action="edit-target" data-id="${escapeHtml(t.id)}" class="text-blue-600 font-bold hover:underline">Edit</button>
+            <button data-action="delete-target" data-id="${escapeHtml(t.id)}" class="text-red-600 font-bold hover:underline">Hapus</button>
+          </td></tr>`).join('') : '<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada target. Klik + Tambah Target.</td></tr>';
+      $('tableBodyTarget').innerHTML = html;
+    }
+
+    $('tableBodyTarget').addEventListener('click', e => {
+      const b = e.target.closest('button[data-action]');
+      if (!b) return;
+      if (b.dataset.action === 'edit-target') openModalTarget(TARGET_CACHE.find(x => String(x.id) === b.dataset.id));
+      if (b.dataset.action === 'delete-target') deleteTarget(b.dataset.id);
     });
 
     async function deleteTarget(id) {
       if (!confirm('Hapus target ini?')) return;
-      if (navigator.onLine && getSupabase()) {
-        await getSupabase().from('master_target').delete().eq('id', id);
+      if (id.startsWith('L')) setLsT(lsT().filter(t => t.id !== id));
+      else {
+        const c = getSupabase();
+        if (!c || !navigator.onLine) return alert('Perlu koneksi internet.');
+        const r = await c.from('master_target').delete().eq('id', id);
+        if (r.error) alert('❌ Gagal hapus: ' + r.error.message);
       }
       loadTargetData();
     }
+
+    // ================= QMS =================
+    const QMS_DEFECTS = {
+      Blowing: ['Bocor/Pinhole', 'Berat tidak sesuai', 'Flashing/Burr', 'Warna belang', 'Deformasi'],
+      Vinyl: ['Gelembung udara', 'Sobek', 'Belang warna', 'Dimensi tidak sesuai', 'Noda/Kotor'],
+      Sablon: ['Sablon kabur', 'Sablon geser', 'Warna tidak sesuai', 'Sablon terkelupas', 'Noda/Kotor'],
+      Painting: ['Cat menetes', 'Orange peel', 'Debu/Kontaminasi', 'Cat tidak rata', 'Warna tidak sesuai'],
+      Assembly: ['Komponen kurang', 'Salah pasang', 'Goresan/Kotor', 'Baut/Clip longgar', 'Fungsi gagal']
+    };
+    const NCR_LIMIT = 2; // defect rate (%) di atas ini otomatis membuka NCR
+    let qChart = null;
+
+    function initQms() {
+      if (!$('q_tanggal').value) { $('q_tanggal').value = new Date().toISOString().split('T')[0]; qDeptChange(); }
+      loadQms();
+    }
+    function qDeptChange() {
+      const d = $('q_dept').value;
+      $('q_mesin').innerHTML = (MASTER_UNITS[d] || []).map(m => `<option>${escapeHtml(m)}</option>`).join('');
+      $('qDefects').innerHTML = [...QMS_DEFECTS[d], 'Lainnya'].map(n => `<div><label class="block text-[11px] font-bold text-slate-600 mb-1">${escapeHtml(n)}</label><input type="number" min="0" data-defect="${escapeHtml(n)}" oninput="qCalc()" class="q-def w-full p-2 border rounded-lg text-sm bg-red-50" placeholder="0"></div>`).join('');
+      qCalc();
+    }
+    function qCalc() {
+      const sm = parseInt($('q_sampel').value) || 0;
+      let t = 0;
+      document.querySelectorAll('.q-def').forEach(i => { t += parseInt(i.value) || 0; });
+      const r = sm ? t / sm * 100 : 0;
+      $('qCalc').innerText = `Defect ${t} / Sampel ${sm} = ${r.toFixed(2)}%` + (r > NCR_LIMIT ? ` (melebihi batas ${NCR_LIMIT}%, NCR dibuka otomatis)` : '');
+      return { sm, t, r };
+    }
+    async function saveInspeksi() {
+      const { sm, t, r } = qCalc();
+      const defects = {};
+      document.querySelectorAll('.q-def').forEach(i => { const v = parseInt(i.value) || 0; if (v > 0) defects[i.dataset.defect] = v; });
+      const wo = $('q_wo').value.trim().toUpperCase(), produk = $('q_produk').value.trim();
+      if (!wo || !produk || sm <= 0) return alert('No. WO, produk, dan jumlah sampel (>0) wajib diisi.');
+      if (t > sm) return alert('Jumlah defect tidak boleh melebihi jumlah sampel.');
+      const disp = $('q_disposisi').value, ncr = r > NCR_LIMIT || disp !== 'Pass';
+      const c = getSupabase();
+      if (!c || !navigator.onLine) return alert('QMS memerlukan koneksi internet.');
+      const row = { tanggal: $('q_tanggal').value, shift: $('q_shift').value, department: $('q_dept').value, mesin: $('q_mesin').value, work_order: wo, produk, sampel: sm, total_defect: t, defect_rate: +r.toFixed(2), defects, disposisi: disp, catatan: $('q_catatan').value.trim(), ncr_status: ncr ? 'Open' : 'None', inspector: currentUser?.email || null };
+      const res = await c.from('qms_inspeksi').insert([row]);
+      if (res.error) return alert('❌ Gagal simpan: ' + res.error.message + '\n\nJalankan supabase_setup.sql untuk membuat tabel qms_inspeksi.');
+      alert(ncr ? '✅ Inspeksi tersimpan. NCR dibuka otomatis.' : '✅ Inspeksi tersimpan.');
+      ['q_wo', 'q_produk', 'q_sampel', 'q_catatan'].forEach(i => { $(i).value = ''; });
+      qDeptChange();
+      loadQms();
+    }
+    async function loadQms() {
+      const tb = $('qTableBody'), c = getSupabase();
+      if (!c || !navigator.onLine) { tb.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-400">Perlu koneksi internet.</td></tr>'; return; }
+      const r = await c.from('qms_inspeksi').select('*').order('created_at', { ascending: false }).limit(300);
+      if (r.error) { tb.innerHTML = `<tr><td colspan="7" class="p-3 bg-amber-50 text-amber-800 font-bold">⚠️ ${escapeHtml(r.error.message)}. Jalankan supabase_setup.sql untuk membuat tabel qms_inspeksi.</td></tr>`; return; }
+      const d = r.data || [];
+      const S = d.reduce((a, x) => a + (x.sampel || 0), 0), D = d.reduce((a, x) => a + (x.total_defect || 0), 0);
+      const rate = S ? D / S * 100 : 0;
+      $('qKSampel').innerText = S.toLocaleString();
+      $('qKRate').innerText = rate.toFixed(2) + '%';
+      $('qKFpy').innerText = (S ? 100 - rate : 0).toFixed(2) + '%';
+      $('qKNcr').innerText = d.filter(x => x.ncr_status === 'Open').length;
+      const canClose = ['supervisor', 'admin'].includes(currentUser?.role);
+      tb.innerHTML = d.slice(0, 50).map(x => `
+        <tr class="border-b hover:bg-slate-50">
+          <td class="p-2">${escapeHtml(x.tanggal)} (S${escapeHtml(x.shift)})</td>
+          <td class="p-2">${escapeHtml(x.department)} / ${escapeHtml(x.mesin)}</td>
+          <td class="p-2">${escapeHtml(x.work_order)}<br><span class="text-slate-500">${escapeHtml(x.produk)}</span></td>
+          <td class="p-2 font-mono">${escapeHtml(x.sampel)}</td>
+          <td class="p-2 font-mono">${escapeHtml(x.total_defect)} (${escapeHtml(x.defect_rate)}%)</td>
+          <td class="p-2 font-bold">${escapeHtml(x.disposisi)}</td>
+          <td class="p-2">${x.ncr_status === 'Open' ? `<span class="text-red-600 font-bold">Open</span> ${canClose ? `<button data-ncr="${escapeHtml(x.id)}" class="ml-1 text-blue-600 font-bold hover:underline">Tutup</button>` : ''}` : x.ncr_status === 'Closed' ? '<span class="text-emerald-600 font-bold">Closed</span>' : '-'}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada inspeksi.</td></tr>';
+      const agg = {};
+      d.forEach(x => Object.entries(x.defects || {}).forEach(([k, v]) => { agg[k] = (agg[k] || 0) + v; }));
+      const labels = Object.keys(agg).sort((a, b) => agg[b] - agg[a]);
+      const vals = labels.map(k => agg[k]), tot = vals.reduce((a, b) => a + b, 0) || 1;
+      let cum = 0;
+      const cumPct = vals.map(v => +((cum += v) / tot * 100).toFixed(1));
+      if (qChart) qChart.destroy();
+      qChart = new Chart($('chartQmsPareto').getContext('2d'), {
+        data: {
+          labels: labels.length ? labels : ['Belum ada data'],
+          datasets: [
+            { type: 'bar', label: 'Jumlah defect', data: labels.length ? vals : [0], backgroundColor: '#ef4444', yAxisID: 'y' },
+            { type: 'line', label: 'Kumulatif %', data: labels.length ? cumPct : [0], borderColor: '#6366f1', yAxisID: 'y2' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y2: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } } } }
+      });
+    }
+    $('qTableBody').addEventListener('click', async e => {
+      const b = e.target.closest('button[data-ncr]');
+      if (!b) return;
+      const act = prompt('Root cause & tindakan korektif untuk menutup NCR:');
+      if (!act || !act.trim()) return;
+      const r = await getSupabase().from('qms_inspeksi').update({ ncr_status: 'Closed', tindakan_korektif: act.trim(), closed_by: currentUser?.email || null, closed_at: new Date().toISOString() }).eq('id', b.dataset.ncr);
+      if (r.error) alert('❌ ' + r.error.message); else loadQms();
+    });
 
     function openModalMesin() { document.getElementById('modalMesin').classList.remove('hidden'); }
     function closeModalMesin() { document.getElementById('modalMesin').classList.add('hidden'); }
@@ -1802,10 +1989,154 @@
       if (btn) deleteMesinUnit(btn.dataset.dept, btn.dataset.nama);
     });
 
+    // ===== OEE: satu rumus untuk form, dashboard, approval, export =====
+    // Availability = (waktu terjadwal - downtime) / waktu terjadwal
+    // Performance  = (OK+NG) / (target x waktu jalan / waktu terjadwal)  -> boleh > 100%
+    // Quality      = OK / (OK+NG);  OEE = A x P x Q  -> boleh > 100%
+    function slotMin(g) {
+      if (!g.jam_mulai || !g.jam_selesai) return 0;
+      const m = t => { const [h, mi] = String(t).split(':').map(Number); return h * 60 + mi; };
+      return (m(g.jam_selesai) - m(g.jam_mulai) + 1440) % 1440;
+    }
+    function calcOee(garapan, fallback) {
+      const list = Array.isArray(garapan) ? garapan : [];
+      if (!list.length) return { avail: 0, perf: 0, qual: 0, oee: fallback || 0 };
+      let plan = 0, dt = 0, exp = 0, ok = 0, ng = 0;
+      list.forEach(g => {
+        const sp = slotMin(g) || 480 / list.length, d = Math.min(g.downtime_menit || 0, sp);
+        plan += sp; dt += d; exp += (g.target || 0) * (sp - d) / sp;
+        ok += g.hasil_ok || 0; ng += g.hasil_ng || 0;
+      });
+      const avail = Math.max(0, (plan - dt) / plan * 100), perf = exp > 0 ? (ok + ng) / exp * 100 : 0, qual = ok + ng > 0 ? ok / (ok + ng) * 100 : 0;
+      return { avail, perf, qual, oee: avail * perf * qual / 10000 };
+    }
+    const oeeOf = row => calcOee(row.garapan, row.oee_score).oee;
+    function currentGarapan() {
+      return [...document.querySelectorAll('.garapan-card')].map(c => {
+        const v = k => c.querySelector('.' + k).value;
+        return { jam_mulai: v('g-mulai'), jam_selesai: v('g-selesai'), target: parseFloat(v('g-target')) || 0, hasil_ok: parseFloat(v('g-ok')) || 0, hasil_ng: parseFloat(v('g-ng')) || 0, downtime_menit: parseFloat(v('g-downtime')) || 0 };
+      });
+    }
+
+    // ===== Edit draft / revisi laporan yang ditolak =====
+    let editingReportId = null, MY_REPORTS = [];
+    async function loadMyReports() {
+      const c = getSupabase();
+      if (!c || !navigator.onLine || !currentUser) return;
+      const r = await c.from('laporan_shift').select('*').eq('created_by', currentUser.email).in('status', ['Draft', 'Rejected']).order('created_at', { ascending: false }).limit(10);
+      MY_REPORTS = r.data || [];
+      $('myReports').classList.toggle('hidden', !MY_REPORTS.length);
+      $('myReports').innerHTML = '<p class="text-xs font-bold text-amber-900 mb-1">Laporan Anda yang perlu dilanjutkan / direvisi</p>' + MY_REPORTS.map(x => `<div class="flex justify-between items-center gap-2 text-xs py-1 border-t border-amber-200"><span>${escapeHtml(x.tanggal)} S${escapeHtml(x.shift)} · ${escapeHtml(x.mesin)} · <b>${escapeHtml(x.status)}</b>${x.reject_reason ? `<br><span class="text-red-600">Alasan reject: ${escapeHtml(x.reject_reason)}</span>` : ''}</span><button type="button" data-edit="${escapeHtml(x.id)}" class="text-blue-600 font-bold hover:underline">Edit</button></div>`).join('');
+    }
+    $('myReports').addEventListener('click', e => { const b = e.target.closest('button[data-edit]'); if (b) editReport(b.dataset.edit); });
+    function cancelEdit() { editingReportId = null; $('editBanner').classList.add('hidden'); buildSesi(); }
+    function editReport(id) {
+      const r = MY_REPORTS.find(x => String(x.id) === String(id));
+      if (!r) return;
+      editingReportId = r.id;
+      $('tanggal').value = r.tanggal; $('shift').value = String(r.shift); $('koordinator').value = r.koordinator || ''; $('department').value = r.department;
+      updateMesinOptions(); checkAssemblyMode(); updateOperatorDropdown();
+      $('mesin').value = r.mesin; $('assembly_mode').value = r.assembly_mode || 'Individu'; toggleOperatorMode();
+      document.querySelectorAll('.op-row').forEach((row, i) => { if (i) row.remove(); });
+      (r.operators || []).forEach((o, i) => {
+        if (i > 0) addOperatorInput();
+        const row = document.querySelectorAll('.op-row')[i];
+        row.querySelector('.op-nama').value = o.nama; row.querySelector('.op-status').value = o.status;
+      });
+      buildSesi();
+      const cards = document.querySelectorAll('.garapan-card');
+      (r.garapan || []).forEach((g, i) => {
+        const c = cards[g.sesi ? g.sesi - 1 : i];
+        if (!c) return;
+        const set = (k, v) => { c.querySelector('.' + k).value = v ?? ''; };
+        set('g-wo', g.work_order); set('g-lot', g.lot_number); set('g-produk', g.produk); set('g-target', g.target);
+        set('g-ok', g.hasil_ok); set('g-ng', g.hasil_ng); set('g-downtime', g.downtime_menit); set('g-alasan', g.alasan_downtime);
+        if (g.tidak_produksi) { c.dataset.idle = '1'; c.querySelector('input[type=checkbox]').checked = true; }
+      });
+      calculateShiftTotals();
+      $('editBanner').innerHTML = `✏️ Mengedit laporan ${escapeHtml(r.tanggal)} Shift ${escapeHtml(r.shift)} · ${escapeHtml(r.mesin)} (${escapeHtml(r.status)})${r.reject_reason ? `<br><span class="text-red-600">Alasan reject: ${escapeHtml(r.reject_reason)}</span>` : ''} <button type="button" onclick="cancelEdit()" class="ml-2 underline">Batal edit</button>`;
+      $('editBanner').classList.remove('hidden');
+      window.scrollTo(0, 0);
+    }
+
+    // ===== Jadwal produksi (plan vs actual) =====
+    const today = () => new Date().toISOString().split('T')[0];
+    const canPlan = () => ['supervisor', 'admin'].includes(currentUser?.role);
+    function planDept() { $('p_mesin').innerHTML = (MASTER_UNITS[$('p_dept').value] || []).map(m => `<option>${escapeHtml(m)}</option>`).join(''); }
+    function planAutoQty() {
+      const t = TARGET_CACHE.find(x => x.department === $('p_dept').value && String(x.nama_produk).toLowerCase() === $('p_produk').value.trim().toLowerCase());
+      if (t) $('p_qty').value = t.target_shift;
+    }
+    function initPlan() {
+      $('planForm').classList.toggle('hidden', !canPlan());
+      if (!$('p_tanggal').value) { ['p_tanggal', 'pf_from', 'pf_to'].forEach(i => { $(i).value = today(); }); planDept(); }
+      loadPlan();
+    }
+    async function savePlan() {
+      const c = getSupabase();
+      if (!c || !navigator.onLine) return alert('Perlu koneksi internet.');
+      const row = { tanggal: $('p_tanggal').value, shift: $('p_shift').value, department: $('p_dept').value, mesin: $('p_mesin').value, work_order: $('p_wo').value.trim().toUpperCase(), produk: $('p_produk').value.trim(), target_plan: parseFloat($('p_qty').value) || 0, created_by: currentUser?.email || null };
+      if (!row.tanggal || !row.mesin || !row.work_order || !row.produk || row.target_plan <= 0) return alert('Tanggal, mesin, WO, produk, dan qty plan (>0) wajib diisi.');
+      const ex = await c.from('jadwal_produksi').select('id').eq('tanggal', row.tanggal).eq('shift', row.shift).eq('mesin', row.mesin).eq('work_order', row.work_order).limit(1);
+      if (ex.data && ex.data.length) return alert('Jadwal untuk WO, mesin, dan shift ini sudah ada.');
+      const r = await c.from('jadwal_produksi').insert([row]);
+      if (r.error) return alert('❌ ' + (r.error.code === '23505' ? 'Jadwal duplikat.' : r.error.message + '\nJalankan supabase_setup_v2.sql.'));
+      ['p_wo', 'p_produk', 'p_qty'].forEach(i => { $(i).value = ''; });
+      loadPlan();
+    }
+    async function loadPlan() {
+      const c = getSupabase(), tb = $('planBody');
+      if (!c || !navigator.onLine) { tb.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-slate-400">Perlu koneksi internet.</td></tr>'; return; }
+      const from = $('pf_from').value || today(), to = $('pf_to').value || today(), dept = $('pf_dept').value;
+      let q1 = c.from('jadwal_produksi').select('*').gte('tanggal', from).lte('tanggal', to).order('tanggal').order('shift').order('mesin');
+      if (dept) q1 = q1.eq('department', dept);
+      const q2 = c.from('laporan_shift').select('tanggal,shift,mesin,garapan').gte('tanggal', from).lte('tanggal', to).in('status', ['Submitted', 'Approved']).limit(2000);
+      const [p, a] = await Promise.all([q1, q2]);
+      if (p.error) { tb.innerHTML = `<tr><td colspan="8" class="p-3 bg-amber-50 text-amber-800 font-bold">⚠️ ${escapeHtml(p.error.message)}. Jalankan supabase_setup_v2.sql.</td></tr>`; return; }
+      const act = {}, rep = new Set();
+      (a.data || []).forEach(r => {
+        rep.add(`${r.tanggal}|${r.shift}|${r.mesin}`);
+        (r.garapan || []).forEach(g => { const k = `${r.tanggal}|${r.shift}|${r.mesin}|${String(g.work_order || '').toUpperCase()}`; act[k] = (act[k] || 0) + (g.hasil_ok || 0); });
+      });
+      let tp = 0, ta = 0, none = 0;
+      const del = canPlan();
+      tb.innerHTML = (p.data || []).map(x => {
+        const ok = act[`${x.tanggal}|${x.shift}|${x.mesin}|${x.work_order}`] || 0, has = rep.has(`${x.tanggal}|${x.shift}|${x.mesin}`);
+        const ach = x.target_plan ? ok / x.target_plan * 100 : 0;
+        tp += x.target_plan; ta += ok; if (!has) none++;
+        const st = !has ? ['Belum ada laporan', 'bg-slate-200 text-slate-600'] : ach >= 100 ? ['Tercapai', 'bg-emerald-100 text-emerald-700'] : ach >= 80 ? ['Mendekati plan', 'bg-amber-100 text-amber-700'] : ['Di bawah plan', 'bg-red-100 text-red-700'];
+        return `<tr class="border-b hover:bg-slate-50"><td class="p-2">${escapeHtml(x.tanggal)} (S${escapeHtml(x.shift)})</td><td class="p-2">${escapeHtml(x.mesin)}</td><td class="p-2">${escapeHtml(x.work_order)}<br><span class="text-slate-500">${escapeHtml(x.produk)}</span></td><td class="p-2 font-mono">${escapeHtml(x.target_plan)}</td><td class="p-2 font-mono">${ok}</td><td class="p-2 font-bold">${ach.toFixed(1)}%</td><td class="p-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${st[1]}">${st[0]}</span></td><td class="p-2">${del ? `<button data-plan-del="${escapeHtml(x.id)}" class="text-red-600 font-bold hover:underline">Hapus</button>` : ''}</td></tr>`;
+      }).join('') || '<tr><td colspan="8" class="p-4 text-center text-slate-400">Belum ada jadwal pada rentang ini.</td></tr>';
+      $('pKPlan').innerText = tp.toLocaleString(); $('pKAct').innerText = ta.toLocaleString();
+      $('pKAch').innerText = (tp ? ta / tp * 100 : 0).toFixed(1) + '%'; $('pKNo').innerText = none;
+    }
+    $('planBody').addEventListener('click', async e => {
+      const b = e.target.closest('button[data-plan-del]');
+      if (!b || !confirm('Hapus jadwal ini?')) return;
+      const r = await getSupabase().from('jadwal_produksi').delete().eq('id', b.dataset.planDel);
+      if (r.error) alert('❌ ' + r.error.message); else loadPlan();
+    });
+    async function fillFromPlan() {
+      const c = getSupabase();
+      if (!c || !navigator.onLine) return alert('Perlu koneksi internet.');
+      const r = await c.from('jadwal_produksi').select('*').eq('tanggal', $('tanggal').value).eq('shift', $('shift').value).eq('mesin', $('mesin').value).order('id');
+      const pl = r.data || [];
+      if (r.error || !pl.length) return alert(r.error ? r.error.message : 'Tidak ada jadwal untuk tanggal, shift, dan mesin ini.');
+      const idx = [0, 1, 2, 3].map(i => Math.floor(i * pl.length / 4));
+      document.querySelectorAll('.garapan-card').forEach((card, i) => {
+        const p = pl[idx[i]], n = idx.filter(x => x === idx[i]).length, tg = card.querySelector('.g-target');
+        card.querySelector('.g-wo').value = p.work_order; card.querySelector('.g-produk').value = p.produk;
+        tg.value = Math.round(p.target_plan / n); tg.dataset.auto = '1';
+      });
+      calculateShiftTotals();
+    }
+
     function initAppAfterLogin() {
       document.getElementById('tanggal').value = new Date().toISOString().split('T')[0];
       loadMesinData();
-      addGarapanItem();
+      buildSesi();
+      loadMyReports();
+      loadTargetData();
       SyncManager.updateBadge();
     }
   </script>
